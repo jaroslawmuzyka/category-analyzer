@@ -65,12 +65,7 @@ class ProductsMatchItem(BaseModel):
 class ProductsMatchResponse(BaseModel):
     items: list[ProductsMatchItem]
 
-class ContentMatchItem(BaseModel):
-    keyword: str
-    match: str
 
-class ContentMatchResponse(BaseModel):
-    items: list[ContentMatchItem]
 
 class VideoAnalysisItem(BaseModel):
     keyword: str
@@ -94,7 +89,6 @@ SCHEMA_MAP = {
     "relevant": RelevantResponse,
     "classify": ClassifyResponse,
     "products_match": ProductsMatchResponse,
-    "content_match": ContentMatchResponse,
     "video_analysis": VideoAnalysisResponse,
     "action": ActionResponse
 }
@@ -115,7 +109,8 @@ PROMPTS = {
     "relevant": """Jesteś ekspertem SEO dla sklepu e-commerce {client_name} ({domain}).
 Otrzymujesz listę fraz kluczowych w formacie JSON. Dla KAŻDEJ frazy oceń, czy jest relewantna dla tego sklepu.
 
-Fraza jest NIERELEWANTNA jeśli dotyczy: tapet/wallpapers, memów, napraw DIY niezwiązanych ze sklepem, gier mobilnych, oprogramowania, treści rozrywkowych, torrentów, piractwa itp.
+Fraza jest NIERELEWANTNA jeśli dotyczy: tapet/wallpapers, memów, napraw DIY niezwiązanych ze sklepem, gier mobilnych, oprogramowania, treści rozrywkowych, torrentów, piractwa itp. 
+Odrzucaj też ZAWSZE frazy zawierające nazwy obcych sklepów konkurencji (np. allegro, media expert, rtv euro agd, x-kom, neonet, amazon, komputronik).
 
 Fraza JEST relewantna jeśli dotyczy: produktów elektronicznych, akcesoriów, porównań produktów, recenzji, cen, specyfikacji technicznych, serwisu, kategorii produktowych.
 
@@ -130,11 +125,22 @@ Klasyfikujesz frazy kluczowe. Dla KAŻDEJ frazy określ szczegółowe dane.
 
 1. L1_Funnel_stage: Awareness, Consideration, Decision, Retention
 2. L2_Intent: Brand Navigational, Branded Informational, Branded Versus, Brand Discovery, Brand Transactional, Branded Commercial - Filter, Branded Commercial - SKU, Generic Commercial, Generic Transactional, Commercial Research, Lifestyle / Inspirational, SEO: akcesoria, Retention / Service, Retailer Navigational
-3. L3_MM_Segment: Kategoria modelu, Kategoria producenta, Kategoria wariantu, Filtr kategorii, Kategoria akcesoriów, Content poradnik, Content versus, Specials premiera, Listing tematyczny, Listing cenowa, PDP, Serwis lokalny
+3. L3_MM_Segment: Kategoria modelu, Kategoria producenta, Kategoria wariantu, Filtr kategorii, Kategoria akcesoriów, Content poradnik, Content versus, Specials premiera, Listing tematyczny, Cena, PDP, Serwis lokalny
 4. Brand_flag (TAK/NIE)
 5. Brand (nazwa)
 
-Sama nazwa modelu ("iphone 16 pro") to Brand Navigational + Consideration + Kategoria modelu.
+TWARDE ZASADY KLASYFIKACJI (POZYTYWNE WZORCE):
+- Cechy modelu pojedyncze (np. "iphone 16 pro biały") -> L2_Intent="Branded Commercial - Filter", L3_MM_Segment="Filtr kategorii".
+- Złożone kombinacje min. 2 parametrów (np. "telewizor full hd dvbt" - kategoria + min. 2 filtry) -> L3_MM_Segment="Listing tematyczny" (reprezentujący Searchlist, gdy nie da się kliknąć 1 filtra docelowego). Należą tu też uogólnione wylistowania potrzeb (np. "smartfon dla dziecka").
+- Frazy wprost oparte na słowie "cena" lub pytania o wariant wyceny ("iphone 17 cena", "ile kosztuje iphone x") -> L3_MM_Segment="Cena".
+- Zapytania o daty wejścia na rynek (np. "iphone 8 premiera", "kiedy wyszedl iphone 16") -> L3_MM_Segment="Specials premiera".
+- Bezpośrednie zestawienia modeli obok siebie (np. "iphone 16 pro vs samsung") -> L2_Intent="Branded Versus", L3_MM_Segment="Content versus".
+- Sama nazwa producenta (tylko np. "apple", "samsung", "smartfon nubia") -> L2_Intent="Brand Discovery", L3_MM_Segment="Kategoria producenta".
+
+TWARDE ZASADY KLASYFIKACJI (NEGATYWNE WZORCE I ZABEZPIECZENIA):
+- Frazy poradnikowe (zawierające np. "jak", "czy", "gdzie", "dlaczego", "imei", "lokalizacja", "zablokowany", "hasło", "wirus") ZAWSZE oznaczaj jako: L2_Intent="Branded Informational", L3_MM_Segment="Content poradnik".
+- Frazy części i serwisu (np. "bateria", "wymiana", "naprawa", "szybka") ZAWSZE oznaczaj jako "Serwis lokalny", a w przypadku luźnego zakupu (np. "kabel", "etui", "szkło") jako "Kategoria akcesoriów", a nie Kategoria modelu.
+- Konkretna linia modeli (np. "iphone 16", "realme gt 6", "smartfon apple iphone 16") to ZAWSZE L2_Intent="Brand Navigational" + "Kategoria modelu" (nigdy nie przypisuj dla nich kategorii producenta).
 
 Odpowiedz zgodnie z wymaganym schematem JSON.
 
@@ -151,20 +157,7 @@ Odpowiedz zgodnie z wymaganym schematem JSON.
 Dane:
 {keywords_json}""",
 
-    "content_match": """Jesteś ekspertem SEO. Sprawdzasz, czy strony z {domain} odpowiadają intencji frazy.
 
-ZASADY:
-- Fraza modelu (np. "iphone 16 pro") -> KATEGORIA, a nie PRODUCT.
-- Fraza informacji (np. "jak wyłączyć") -> CONTENT.
-- Fraza akcesoriów -> KATEGORIA akcesoriów.
-- Fraza filtra -> KATEGORIA z filtrem.
-
-Oceń TAK/NIE w polu match dla każdego keywordu.
-
-Odpowiedz zgodnie z wymaganym schematem JSON.
-
-Dane:
-{keywords_json}""",
 
     "video_analysis": """Jesteś ekspertem video marketingu. Oceń:
 1. Kanał video (KANAŁ KLIENTA, INFLUENCER, OBA)
@@ -184,7 +177,8 @@ Jeśli MM_in_SERP = "NIE", to ZAWSZE wymaga akcji.
 ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI
 ZASADA #3 — WALIDACJA TARGET URL
 Twoim głównym oparciem jest pole "Sitemap_TOP10" dostarczające w 100% pewnych, zmapowanych lokalnie danych z Sitemapy sklepu. "Site_TOP_URLs" to informacja pomocnicza (wybór Google).
-ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE (co optymalizować).
+ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE.
+ZASADA #5 — EKSTREMALNIE KRÓTKI OPIS. Action_detail ma być bezlitosnym konkretem (max 1 trafne zdanie), np. "Brak w sitemap i site:domena - rekomendujemy utworzenie nowej kategorii.". NIE PIOSZ o optymalizacji SEO, title, on-page czy linkowaniu wewnętrznym. Interesują nas tylko luki strukturalne!
 
 Zwróć Action_type, Action_detail, Target_URL_suggested.
 
@@ -210,7 +204,7 @@ def init_state():
 init_state()
 
 STEPS = ["Import fraz", "Relevance", "Klasyfikacja", "Sitemap XML", "SERP snapshot",
-         "site:…/product/", "Product match", "site:domain", "Content match",
+         "site:…/product/", "Product match", "site:domain",
          "Video analysis", "Rekomendacje", "Eksport"]
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -827,9 +821,9 @@ elif CS == 8:
         st.rerun()
     nav_buttons(8)
 
-# ── STEP 9: Video analysis ──────────────────────────────────
-elif CS == 9:
-    st.header("Krok 10 · Video analysis")
+# ── STEP 8: Video analysis ──────────────────────────────────
+elif CS == 8:
+    st.header("Krok 9 · Video analysis")
     df = st.session_state.df
 
     video_col = "SERP_video"
@@ -868,13 +862,13 @@ elif CS == 9:
             st.info("Brak fraz z Video w SERP — pomijam.")
 
         st.session_state.df = df
-        st.session_state.step = 10
+        st.session_state.step = 9
         st.rerun()
-    nav_buttons(9)
+    nav_buttons(8)
 
-# ── STEP 10: Recommendations ─────────────────────────────────
-elif CS == 10:
-    st.header("Krok 11 · Rekomendacje AI")
+# ── STEP 9: Recommendations ─────────────────────────────────
+elif CS == 9:
+    st.header("Krok 10 · Rekomendacje AI")
     df = st.session_state.df
     mask = df["Relevant_for_MM"] == "TAK" if "Relevant_for_MM" in df.columns else pd.Series([True]*len(df))
     rel = df[mask]
@@ -905,7 +899,7 @@ elif CS == 10:
                "Brand_flag", "Brand", "Pos_SEO_Explorer", "URL_best_Explorer",
                "Cannibalization_flag", "SERP_features", "MM_in_SERP",
                "Has_products", "Products_match_intent", "Product_URLs",
-               "Site_results_count", "Site_TOP_URLs", "URL_types_found", "Content_match_intent",
+               "Site_results_count", "Site_TOP_URLs", "URL_types_found",
                "Matching_category_URL", "Video_channel", "Video_format", "Sitemap_TOP10"]
     avail = [c for c in ai_cols if c in rel.columns]
     ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
@@ -921,14 +915,32 @@ elif CS == 10:
             rm = {r["keyword"]: r for r in res if "keyword" in r}
             for c in ["Action_type", "Action_detail", "Target_URL_suggested"]:
                 df[c] = df["Keyword"].map(lambda k: rm.get(k, {}).get(c, ""))
+                
+            def is_new_url(row):
+                target = str(row.get("Target_URL_suggested", "")).strip()
+                if not target or target.lower() in ["", "brak", "none", "null"]: return ""
+                existing = []
+                for col in ["Site_TOP_URLs", "Sitemap_TOP10", "Product_URLs", "URL_best_Explorer", "Cannibalization_URLs", "TOP3_organic_URLs", "Matching_category_URL"]:
+                    if col in row and pd.notna(row[col]):
+                        existing.extend(str(row[col]).split(" | "))
+                target_clean = target.strip("/")
+                for e in existing:
+                    e_clean = e.strip().split(" ")[0].strip("/") # split by whitespace to remove [1] ranks
+                    if not e_clean: continue
+                    if target_clean in e_clean or e_clean in target_clean:
+                        return ""
+                return "NEW"
+                
+            df["Target_URL_is_NEW"] = df.apply(is_new_url, axis=1)
+            
         st.session_state.df = df
-        st.session_state.step = 11
+        st.session_state.step = 10
         st.rerun()
-    nav_buttons(10)
+    nav_buttons(9)
 
-# ── STEP 11: Export ──────────────────────────────────────────
-elif CS == 11:
-    st.header("Krok 12 · Eksport finalny")
+# ── STEP 10: Export ──────────────────────────────────────────
+elif CS == 10:
+    st.header("Krok 11 · Eksport finalny")
     df = st.session_state.df
     st.success(f"Analiza zakończona! **{len(df)}** fraz · **{len(df.columns)}** kolumn")
 

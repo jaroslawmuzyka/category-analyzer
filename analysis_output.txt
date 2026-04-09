@@ -1,0 +1,154 @@
+Columns:
+['Keyword', 'Volume', 'Pozycja_MM SEO EXPLORER', 'URL_MM', 'L1_Stage', 'L2_Intent', 'L3_MM_Segment', 'MM_Action', 'MM_Asset_Type', 'L4_Brand_Mentioned', 'Brand']
+
+L2_Intent counts:
+L2_Intent
+Brand Navigational             3332
+SEO: akcesoria                 1205
+Branded Commercial - Filter     673
+Branded Informational           651
+Brand Discovery                 491
+Brand Transactional             316
+Generic Commercial              268
+Retention / Service             234
+Lifestyle / Inspirational       183
+Branded Commercial - SKU        145
+Branded Versus                  112
+Generic Transactional            89
+Retailer Navigational            83
+Commercial Research              75
+Name: count, dtype: int64
+
+L3_MM_Segment counts:
+L3_MM_Segment
+Kategoria modelu        3332
+Kategoria akcesoriow    1189
+Filtr kategorii          673
+Content poradnik         651
+Kategoria producenta     491
+Listing tematyczny       442
+Kategoria wariantu       316
+Serwis lokalny           234
+Specials premiera        183
+PDP                      145
+Content versus           112
+Listing cenowa            89
+Name: count, dtype: int64
+
+Group by L2_Intent and L3_MM_Segment:
+                  L2_Intent        L3_MM_Segment  counts
+            Brand Discovery Kategoria producenta     491
+         Brand Navigational     Kategoria modelu    3332
+        Brand Transactional   Kategoria wariantu     316
+Branded Commercial - Filter      Filtr kategorii     673
+   Branded Commercial - SKU                  PDP     145
+      Branded Informational     Content poradnik     651
+             Branded Versus       Content versus     112
+        Commercial Research   Listing tematyczny      75
+         Generic Commercial   Listing tematyczny     268
+      Generic Transactional       Listing cenowa      89
+  Lifestyle / Inspirational    Specials premiera     183
+      Retailer Navigational   Listing tematyczny      83
+        Retention / Service       Serwis lokalny     234
+             SEO: akcesoria Kategoria akcesoriow    1189
+             SEO: akcesoria   Listing tematyczny      16
+
+Sample keywords per L3_MM_Segment:
+
+--- Kategoria modelu ---
+- bateria iphone x
+- smartfon realme gt 7
+- smartfon apple iphone 16
+- smartfon sony xperia 10 vi
+- numer imei iphone
+
+--- Kategoria producenta ---
+- smartfon nubia
+- realme gt6
+- sprzedaz iphone
+- iphone lokalizacja
+- realme p3
+
+--- Filtr kategorii ---
+- iphone nfc
+- samsung galaxy a16 5g cena
+- iphone 16 128gb
+- czy iphone 15 ma dual sim
+- iphone 16 pro biały
+
+--- Kategoria akcesoriow ---
+- etui iphone 15 pro oryginalne
+- etui na iphone 11 dla dziewczyn
+- szkło iphone 15 pro
+- kabel iphone usb - lightning
+- google pixel 9 case
+
+--- Listing tematyczny ---
+- iphone 13 pro max rtv euro agd
+- telewizja + internet + telefon komórkowy
+- smartfon z najlepszym aparatem
+- smartfon dla dziecka
+- smartfony z nfc
+
+--- Specials premiera ---
+- iphone 8 premiera
+- kiedy wyszedl iphone 16
+- iphone 16 premiera
+- iphone 11 kiedy wyszedł
+- iphone 17 premiera w polsce
+
+--- Kategoria wariantu ---
+- iphone 6s cena
+- iphone xr cena
+- iphone x cena
+- ile kosztuje iphone 17 pro
+- ceny iphone 17
+
+--- Content poradnik ---
+- czy iphone 15 jest wodoszczelny
+- iphone jest zablokowany połącz z itunes jak odblokować
+- jak wylogowac sie z messengera na iphone
+- jak zgrac zdjecia z iphone
+- jak udostepnic wifi iphone
+
+--- Serwis lokalny ---
+- ile kosztuje wymiana baterii w iphone 15 pro
+- ile kosztuje wymiana baterii w iphone
+- stare telefony komórkowe skup
+- naprawa iphone katowice
+- wymiana szybki iphone 11
+
+--- PDP ---
+- samsung galaxy a55 5g 8/256gb
+- poco x6 pro 5g 12/512gb
+- oneplus 13r 5g 12/256gb
+- realme 14 pro 5g 12/512gb
+- iphone 16 256gb biały
+
+--- Listing cenowa ---
+- smartfon do 1500 zł 2025
+- smartfony black friday
+- smartfon do 2500
+- iphon 16 cena
+- smartfon 5g do 500 zł
+
+--- Content versus ---
+- iphone 16 pro vs samsung s25
+- iphone 15 pro vs iphone 16 pro
+- s25 vs iphone 16
+- iphone 16e vs 16
+- jak sprawdzić czy iphone ma wirusa
+
+Suspicious mapping (L2 doesn't logically match L3?):
+Found 763 rows where Intent=Informational but Segment isn't Content, or vice versa
+                                      Keyword             L2_Intent    L3_MM_Segment
+                          jak wylaczyc iphone Branded Informational Content poradnik
+                        jak zresetować iphone Branded Informational Content poradnik
+      jak przenieść dane z androida na iphone Branded Informational Content poradnik
+                          iphone 15 vs 15 pro        Branded Versus   Content versus
+                              iphone 13 vs 14        Branded Versus   Content versus
+                         jak wyzerować iphone Branded Informational Content poradnik
+                      jak nagrac ekran iphone Branded Informational Content poradnik
+                        jak odblokować iphone Branded Informational Content poradnik
+jak zresetować iphone do ustawień fabrycznych Branded Informational Content poradnik
+                              iphone 15 vs 16        Branded Versus   Content versus
