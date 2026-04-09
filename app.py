@@ -196,7 +196,8 @@ Dane:
 # ── State ────────────────────────────────────────────────────
 def init_state():
     defaults = {"df": None, "step": 0, "config": DEFAULT_CONFIG.copy(),
-                "prompts": {k: v for k, v in PROMPTS.items()}, "serp_feature_cols": []}
+                "prompts": {k: v for k, v in PROMPTS.items()}, "serp_feature_cols": [],
+                "session_total_cost": 0.0, "last_cost_info": ""}
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -380,6 +381,8 @@ async def run_all_batches(prompt_template, keywords_data, config, placeholder, p
         cost_in = (actual_prompt_tokens / 1_000_000) * PRICING_PER_1M_INPUT.get(model_name, 0.15)
         cost_out = (actual_completion_tokens / 1_000_000) * PRICING_PER_1M_OUTPUT.get(model_name, 0.60)
         total_cost = cost_in + cost_out
+        st.session_state["session_total_cost"] += total_cost
+        st.session_state["last_cost_info"] = f"💸 Koszt API w ostatnio przetworzonym kroku: **~${total_cost:.4f}** (wykorzystano {actual_completion_tokens:,} tokenów outputu)"
         placeholder.progress(1.0, text=f"Gotowe! Ostateczny koszt (In+Out): ~${total_cost:.4f} ({actual_completion_tokens:,} tokenów outputu)")
     return results
 
@@ -511,6 +514,11 @@ with st.sidebar:
     
     st.session_state.config["batch_size"] = st.slider("Batch size", 5, 50, st.session_state.config["batch_size"])
     st.session_state.config["serp_domain_check"] = st.text_input("Domena w SERP", st.session_state.config["serp_domain_check"])
+    
+    st.divider()
+    st.subheader("Cennik i Zużycie")
+    st.metric("Całkowity koszt sesji", f"${st.session_state.get('session_total_cost', 0.0):.4f}")
+    
     st.divider()
     st.subheader("Prompty")
     pchoice = st.selectbox("Edytuj prompt:", list(st.session_state.prompts.keys()))
@@ -525,6 +533,11 @@ with st.sidebar:
 st.title(f"🔍 SEO Category Analyzer — {st.session_state.config['client_name']}")
 render_step_bar(st.session_state.step)
 st.divider()
+
+if st.session_state.get("last_cost_info"):
+    st.success(st.session_state["last_cost_info"])
+    st.session_state["last_cost_info"] = ""
+
 CS = st.session_state.step
 
 # ── STEP 0: Import ───────────────────────────────────────────
