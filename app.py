@@ -4,7 +4,11 @@ import json
 import time
 import re
 import io
-from openai import OpenAI
+import asyncio
+import tiktoken
+from pydantic import BaseModel, ConfigDict
+from tenacity import retry, stop_after_attempt, wait_random_exponential
+from openai import AsyncOpenAI
 from datetime import date
 
 st.set_page_config(page_title="SEO Category Analyzer", layout="wide", page_icon="🔍")
@@ -27,11 +31,72 @@ def check_password():
 if not check_password():
     st.stop()
 
+# ── OpenAI & Pydantic Models ──────────────────────────────────
 @st.cache_resource
 def get_openai_client():
-    return OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    return AsyncOpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 client = get_openai_client()
+
+class RelevantItem(BaseModel):
+    keyword: str
+    relevant: str
+    reason: str
+
+class RelevantResponse(BaseModel):
+    items: list[RelevantItem]
+
+class ClassifyItem(BaseModel):
+    keyword: str
+    L1_Funnel_stage: str
+    L2_Intent: str
+    L3_MM_Segment: str
+    Brand_flag: str
+    Brand: str
+
+class ClassifyResponse(BaseModel):
+    items: list[ClassifyItem]
+
+class ProductsMatchItem(BaseModel):
+    keyword: str
+    match: str
+
+class ProductsMatchResponse(BaseModel):
+    items: list[ProductsMatchItem]
+
+class ContentMatchItem(BaseModel):
+    keyword: str
+    match: str
+
+class ContentMatchResponse(BaseModel):
+    items: list[ContentMatchItem]
+
+class VideoAnalysisItem(BaseModel):
+    keyword: str
+    video_channel: str
+    video_format: str
+    video_note: str
+
+class VideoAnalysisResponse(BaseModel):
+    items: list[VideoAnalysisItem]
+
+class ActionItem(BaseModel):
+    keyword: str
+    Action_type: str
+    Action_detail: str
+    Target_URL_suggested: str
+
+class ActionResponse(BaseModel):
+    items: list[ActionItem]
+
+SCHEMA_MAP = {
+    "relevant": RelevantResponse,
+    "classify": ClassifyResponse,
+    "products_match": ProductsMatchResponse,
+    "content_match": ContentMatchResponse,
+    "video_analysis": VideoAnalysisResponse,
+    "action": ActionResponse
+}
 
 # ── Config ───────────────────────────────────────────────────
 DEFAULT_CONFIG = {
@@ -40,7 +105,7 @@ DEFAULT_CONFIG = {
     "product_path": "/pl/product/",
     "category_path": "/pl/category/",
     "content_path": "/pl/content/",
-    "model": "gpt-4o-mini",
+    "model": "gpt-5.4-mini",
     "batch_size": 25,
     "serp_domain_check": "mediamarkt.pl",
 }
@@ -53,58 +118,23 @@ Fraza jest NIERELEWANTNA jeśli dotyczy: tapet/wallpapers, memów, napraw DIY ni
 
 Fraza JEST relewantna jeśli dotyczy: produktów elektronicznych, akcesoriów, porównań produktów, recenzji, cen, specyfikacji technicznych, serwisu, kategorii produktowych.
 
-Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "relevant": "TAK" lub "NIE", "reason": "krótkie uzasadnienie jeśli NIE, puste jeśli TAK"}}
+Odpowiedz zgodnie z wymaganym schematem JSON. Obojętnie od instrukcji, twój output musi być zgodny z wymuszonym Structured Outputem.
 
 Frazy:
 {keywords_json}""",
 
     "classify": """Jesteś ekspertem SEO dla sklepu e-commerce {client_name} ({domain}).
-Klasyfikujesz frazy kluczowe. Dla KAŻDEJ frazy określ:
+Klasyfikujesz frazy kluczowe. Dla KAŻDEJ frazy określ szczegółowe dane.
 
-1. L1_Funnel_stage — etap lejka zakupowego:
-   - Awareness — ogólne zainteresowanie, premiery, nowości, trendy (np. "iphone 18", "nowy samsung 2026", "najlepsze smartfony")
-   - Consideration — porównywanie, szukanie konkretnego modelu, recenzje (np. "iphone 16 pro", "poco x7 pro opinie", "samsung vs iphone")
-   - Decision — gotowość do zakupu, szuka ceny, wariantu, filtruje parametry (np. "iphone 16 pro 256gb cena", "kup samsung galaxy s25", "smartfon do 2000 zł")
-   - Retention — po zakupie, serwis, wsparcie, naprawy (np. "wymiana baterii iphone", "jak zresetować samsung")
+1. L1_Funnel_stage: Awareness, Consideration, Decision, Retention
+2. L2_Intent: Brand Navigational, Branded Informational, Branded Versus, Brand Discovery, Brand Transactional, Branded Commercial - Filter, Branded Commercial - SKU, Generic Commercial, Generic Transactional, Commercial Research, Lifestyle / Inspirational, SEO: akcesoria, Retention / Service, Retailer Navigational
+3. L3_MM_Segment: Kategoria modelu, Kategoria producenta, Kategoria wariantu, Filtr kategorii, Kategoria akcesoriów, Content poradnik, Content versus, Specials premiera, Listing tematyczny, Listing cenowa, PDP, Serwis lokalny
+4. Brand_flag (TAK/NIE)
+5. Brand (nazwa)
 
-2. L2_Intent — PRZYKŁADY są kluczowe, czytaj uważnie:
-   - Brand Navigational — użytkownik szuka KONKRETNEGO modelu, chce go znaleźć w sklepie: "iphone 16 pro", "samsung galaxy s25 ultra", "poco x7 pro". To NIE jest informational — to nawigacja do produktu.
-   - Branded Informational — szuka INFORMACJI o produkcie: "jak wyłączyć iphone", "iphone 16 recenzja", "samsung galaxy a56 opinie"
-   - Branded Versus — porównanie modeli: "iphone 15 vs 16", "samsung s25 vs iphone 16"
-   - Brand Discovery — szuka marki ogólnie: "iphone", "samsung galaxy", "xiaomi"
-   - Brand Transactional — chce KUPIĆ konkretny wariant z ceną: "iphone 15 pro 256gb cena", "samsung galaxy s25 kup"
-   - Branded Commercial - Filter — filtruje po parametrach: "iphone 16 pro 256gb", "samsung galaxy czarny 512gb"
-   - Branded Commercial - SKU — konkretny numer modelu/EAN
-   - Generic Commercial — szuka kategorii bez brandu: "smartfon do 2000 zł", "telefon z dobrym aparatem"
-   - Generic Transactional — chce kupić bez brandu: "kup smartfon", "tani telefon"
-   - Commercial Research — rankingi, zestawienia: "najlepszy smartfon 2025", "top 10 telefonów"
-   - Lifestyle / Inspirational — premiery, zapowiedzi: "iphone 18 kiedy premiera", "nowy samsung 2026"
-   - SEO: akcesoria — etui, ładowarki, folie: "etui iphone 16 pro", "ładowarka samsung"
-   - Retention / Service — serwis, naprawy: "wymiana baterii iphone", "serwis samsung warszawa"
-   - Retailer Navigational — szuka sklepu: "mediamarkt smartfony", "mediamarkt iphone"
+Sama nazwa modelu ("iphone 16 pro") to Brand Navigational + Consideration + Kategoria modelu.
 
-3. L3_MM_Segment — segment w sklepie:
-   - Kategoria modelu — strona modelu (np. "iphone 16 pro" → /category/apple-iphone-16-pro/)
-   - Kategoria producenta — strona marki (np. "iphone" → /category/apple/)
-   - Kategoria wariantu — wariant z ceną (np. "iphone 15 pro 256gb cena")
-   - Filtr kategorii — filtr parametryczny (np. "iphone 16 pro 256gb", "samsung galaxy czarny")
-   - Kategoria akcesoriów — etui, folie, ładowarki
-   - Content poradnik — blog how-to (np. "jak zresetować iphone")
-   - Content versus — porównania (np. "iphone 15 vs 16")
-   - Specials premiera — premiery nowych modeli
-   - Listing tematyczny — ranking (np. "najlepsze smartfony 2025")
-   - Listing cenowa — cenówki (np. "smartfon do 1000 zł")
-   - PDP — konkretny SKU
-   - Serwis lokalny — naprawy, serwis w mieście
-
-4. Brand_flag — TAK/NIE
-5. Brand — nazwa marki lub puste
-
-WAŻNE: Sama nazwa modelu (np. "iphone 16 pro") to Brand Navigational + Consideration + Kategoria modelu — użytkownik szuka tego modelu w sklepie. To NIE jest "Branded Informational" (chyba że fraza zawiera słowa typu "opinie", "recenzja", "jak", "czy warto").
-
-Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "L1_Funnel_stage": "...", "L2_Intent": "...", "L3_MM_Segment": "...", "Brand_flag": "TAK/NIE", "Brand": "..."}}
+Odpowiedz zgodnie z wymaganym schematem JSON.
 
 Frazy:
 {keywords_json}""",
@@ -112,121 +142,50 @@ Frazy:
     "products_match": """Jesteś ekspertem SEO. Sprawdzasz, czy produkty znalezione w sklepie {client_name} odpowiadają intencji frazy.
 
 Dla każdej frazy dostajesz URL-e produktów z site:{domain}{product_path}.
-Oceń, czy te produkty odpowiadają na intencję użytkownika.
+Oceń, czy te produkty odpowiadają na intencję użytkownika (zwróć TAK lub NIE w polu match).
 
-Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "match": "TAK" lub "NIE"}}
+Odpowiedz zgodnie z wymaganym schematem JSON.
 
 Dane:
 {keywords_json}""",
 
     "content_match": """Jesteś ekspertem SEO. Sprawdzasz, czy strony z {domain} odpowiadają intencji frazy.
 
-Dla każdej frazy dostajesz:
-- site_urls: URL-e znalezione przez site:{domain}
-- url_types: jakie TYPY stron znaleziono (product, category, content, other)
+ZASADY:
+- Fraza modelu (np. "iphone 16 pro") -> KATEGORIA, a nie PRODUCT.
+- Fraza informacji (np. "jak wyłączyć") -> CONTENT.
+- Fraza akcesoriów -> KATEGORIA akcesoriów.
+- Fraza filtra -> KATEGORIA z filtrem.
 
-ZASADY OCENY:
-- Jeśli fraza dotyczy MODELU (np. "iphone 16 pro") — użytkownik potrzebuje strony KATEGORII (/category/) ze wszystkimi wariantami. Samo posiadanie stron produktowych (/product/) to NIE JEST dopasowanie — PDP pokazuje jeden wariant, a user chce zobaczyć wszystkie.
-- Jeśli fraza dotyczy INFORMACJI (np. "jak zresetować iphone") — potrzebna jest strona /content/.
-- Jeśli fraza dotyczy AKCESORIÓW (np. "etui iphone 16") — potrzebna jest strona kategorii akcesoriów, nie strona telefonu.
-- Jeśli fraza dotyczy FILTRA (np. "iphone 16 pro 256gb") — potrzebna jest strona kategorii z filtrem, nie PDP.
+Oceń TAK/NIE w polu match dla każdego keywordu.
 
-Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "match": "TAK" lub "NIE"}}
+Odpowiedz zgodnie z wymaganym schematem JSON.
 
 Dane:
 {keywords_json}""",
 
-    "video_analysis": """Jesteś ekspertem video marketingu dla sklepu e-commerce {client_name} ({domain}).
+    "video_analysis": """Jesteś ekspertem video marketingu. Oceń:
+1. Kanał video (KANAŁ KLIENTA, INFLUENCER, OBA)
+2. Konkretny format (np. Premiera, Unboxing, Test, Recenzja dłuższa)
 
-Dla każdej frazy, gdzie w SERP pojawia się feature "video", oceń:
-1. Czy lepiej opublikować video na kanale YouTube klienta ({client_name}) czy zlecić influencerowi?
-2. Jaki KONKRETNY format video rekomendujesz?
+Bierz pod uwagę status czasowy modelu na kwiecień 2026.
 
-Dostajesz kontekst: keyword, L2_Intent, L3_MM_Segment.
-
-STATUS MODELI NA RYNKU (stan: kwiecień 2026):
-- iPhone 11, 12, 13, 14, 15 — STARE modele (1-5 lat na rynku)
-- iPhone 16, 16 Pro, 16 Pro Max, 16e — wydane jesień 2024/wiosna 2025, NA RYNKU od ponad roku
-- iPhone 17, 17 Pro, 17 Pro Max — NOWE, premiera jesień 2025, świeże na rynku
-- iPhone 18 — NIEZAPOWIEDZIANY, premiera najwcześniej jesień 2026
-- Samsung Galaxy S25 series — NA RYNKU od stycznia 2025
-- Samsung Galaxy S26 — NIEZAPOWIEDZIANY
-- POCO X7 Pro — NA RYNKU od początku 2025
-- Realme, OnePlus, Nothing — sprawdź kontekst, większość modeli z 2024-2025 jest już na rynku
-
-ZASADY KANAŁU:
-- KANAŁ KLIENTA: how-to, poradniki, porównania techniczne z produktami ze sklepu, oficjalne premiery
-- INFLUENCER: unboxing, recenzje, opinie osobiste, testy w realnych warunkach, "czy warto kupić?"
-- OBA: duże premiery flagowców (klient = info oficjalne, influencer = hype)
-
-ZASADY FORMATU — dopasuj do STATUSU modelu na rynku:
-- Premiera / zapowiedź — TYLKO modele niezapowiedziane lub dopiero co wydane (max 3 miesiące)
-- Unboxing + pierwsze wrażenia — modele wydane w ostatnich 6 miesiącach
-- Test aparatu / zdjęcia — flagowce znane z fotografii (iPhone Pro, Pixel, Galaxy S Ultra)
-- Test wydajności / gaming — modele gamingowe (POCO, OnePlus, ROG)
-- Porównanie X vs Y — gdy fraza sugeruje porównanie lub user wybiera między modelami
-- Recenzja po dłuższym użytkowaniu — modele 6-18 miesięcy na rynku
-- Evergreen review — modele 2+ lata na rynku, nadal popularne
-- How-to / poradnik — frazy instrukcyjne
-- Top / ranking — zestawienia
-
-WAŻNE: Każda fraza powinna dostać INNY, dopasowany format. NIE dawaj tego samego formatu wszystkim.
-
-Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "video_channel": "KANAŁ KLIENTA" lub "INFLUENCER" lub "OBA", "video_format": "konkretny format", "video_note": "uzasadnienie z odniesieniem do specyfiki TEGO modelu i jego statusu na rynku"}}
+Odpowiedz zgodnie z wymaganym schematem JSON.
 
 Dane:
 {keywords_json}""",
 
-    "action": """Jesteś Senior SEO Strategiem dla sklepu {client_name} ({domain}).
-
-STRUKTURA URL KLIENTA:
-- Produkty: {domain}{product_path}
-- Kategorie: {domain}{category_path}
-- Content: {domain}{content_path}
-
-KLUCZOWE ZASADY — czytaj UWAŻNIE:
+    "action": """Jesteś Senior SEO Strategiem dla {client_name} ({domain}).
 
 ZASADA #1 — BRAK POZYCJI TO NIE JEST "OK":
-Jeśli MM_in_SERP = "NIE" (klient nie rankuje w TOP10) — to ZAWSZE wymaga akcji, nawet jeśli ma strony.
-- Ma stronę kategorii ale nie rankuje → "Optymalizacja istniejącej" (meta tagi, schema, linkowanie, content)
-- Ma tylko PDP bez kategorii → "Nowa podkategoria"
-- Nie ma żadnej strony → "Nowa podkategoria" lub "Nowy wpis blogowy" zależnie od intencji
-"Brak akcji" jest dozwolone TYLKO jeśli klient jest już w TOP3.
+Jeśli MM_in_SERP = "NIE", to ZAWSZE wymaga akcji.
+ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI
+ZASADA #3 — WALIDACJA TARGET URL
+ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE (co optymalizować).
 
-ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI:
-- Fraza modelowa (np. "iphone 16 pro") wymaga strony /category/, NIE /product/. PDP to jeden wariant, user chce widzieć wszystkie.
-- SPRAWDŹ POLE Matching_category_URL — jeśli jest NIEPUSTE, to klient JUŻ MA pasującą kategorię! Wtedy Action = "Optymalizacja istniejącej", NIE "Nowa podkategoria", a Target_URL = ten istniejący URL.
-- Jeśli Matching_category_URL jest puste ORAZ URL_types_found nie zawiera "category" → dopiero wtedy Action = "Nowa podkategoria"
-- Jeśli Matching_category_URL jest puste ALE URL_types_found zawiera "category" → sprawdź Site_TOP_URLs, może kategoria istnieje ale nie pasuje idealnie (np. iphone-14-pro zamiast iphone-14-pro-max)
+Zwróć Action_type, Action_detail, Target_URL_suggested.
 
-ZASADA #3 — WALIDACJA TARGET URL:
-Target_URL_suggested MUSI zawierać PEŁNĄ nazwę modelu z frazy.
-- Fraza "iphone 14 pro max" → URL MUSI zawierać "iphone-14-pro-max", NIE "iphone-14-pro" (to inny model!)
-- Fraza "poco x7 pro" → URL MUSI zawierać "poco-x7-pro"
-- Jeśli w danych nie ma pasującego URL-a — zaproponuj NOWY URL w konwencji klienta
-
-ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE:
-NIE pisz "Klient ma istniejące strony pasujące do intencji". Zamiast tego napisz CO DOKŁADNIE zrobić:
-- "Reoptymalizacja meta title i description na /category/apple-iphone-16-pro-70150.html — dodaj priceRange schema, FAQ z PAA"
-- "Utwórz nową podkategorię /category/apple-iphone-15/ — brak strony kategorii mimo 9 PDP w ofercie"
-- "Redirect /product/X na /category/Y — kanibalizacja, PDP zabiera ruch kategorii"
-
-Możliwe Action_type:
-- Nowa podkategoria — brak strony kategorii, ale są produkty
-- Nowy filtr — potrzebny filtr na istniejącej kategorii
-- Nowy wpis blogowy — fraza informacyjna bez pokrycia
-- Optymalizacja istniejącej — jest strona ale nie rankuje lub rankuje słabo
-- Nowy landing — premiera, versus, ranking
-- Redirect — kanibalizacja
-- Video content — video dominuje SERP
-- Artykuł sponsorowany / offsite — frazy gdzie retailerzy nie wygrywają
-- Brak akcji — TYLKO jeśli klient jest w TOP3 i strona pasuje do intencji
-
-Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "Action_type": "...", "Action_detail": "KONKRETNY opis akcji z odniesieniem do URL-i klienta", "Target_URL_suggested": "URL zawierający PEŁNĄ nazwę modelu z frazy"}}
+Odpowiedz zgodnie z wymaganym schematem JSON.
 
 Dane:
 {keywords_json}""",
@@ -239,6 +198,10 @@ def init_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+    # Migracja modelu jeśli stary jest w session_state
+    if "model" in st.session_state.config and getattr(st.session_state.config, "model", "") not in ["gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5-mini", "gpt-5-nano", "gpt-5", "gpt-4.1"]:
+        st.session_state.config["model"] = "gpt-5.4-mini"
 
 init_state()
 
@@ -253,13 +216,10 @@ def export_xlsx(df):
     buf.seek(0)
     return buf
 
-
 def export_segmented_xlsx(df):
-    """Export XLSX with ALL sheet + per-segment sheets."""
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="ALL", index=False)
-
         seg_col = "L3_MM_Segment"
         if seg_col in df.columns:
             segments = df[df[seg_col].fillna("") != ""][seg_col].unique()
@@ -267,7 +227,6 @@ def export_segmented_xlsx(df):
                 seg_df = df[df[seg_col] == seg]
                 safe_name = re.sub(r'[^\w\s-]', '', seg)[:31]
                 seg_df.to_excel(writer, sheet_name=safe_name, index=False)
-
         action_col = "Action_type"
         if action_col in df.columns:
             actions = df[df[action_col].fillna("") != ""][action_col].unique()
@@ -277,10 +236,8 @@ def export_segmented_xlsx(df):
                 safe_name = re.sub(r'[^\w\s-]', '', safe_name)[:31]
                 if safe_name not in [ws for ws in writer.sheets]:
                     act_df.to_excel(writer, sheet_name=safe_name, index=False)
-
     buf.seek(0)
     return buf
-
 
 def nav_buttons(current_step):
     c1, c2, _ = st.columns([1, 1, 6])
@@ -292,7 +249,6 @@ def nav_buttons(current_step):
         if current_step < len(STEPS) - 1 and st.button("Pomiń krok →", key=f"skip_{current_step}"):
             st.session_state.step = current_step + 1
             st.rerun()
-
 
 def render_step_bar(current):
     pills = []
@@ -314,15 +270,19 @@ def render_step_bar(current):
     st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;">{"".join(pills)}</div>', unsafe_allow_html=True)
 
 
-def call_openai_batch(prompt_template, keywords_data, config, placeholder=None):
+# ── AI API Async Flow ────────────────────────────────────────
+
+def estimate_tokens(prompt_template, keywords_data, config):
+    try:
+        enc = tiktoken.encoding_for_model(config["model"])
+    except KeyError:
+        enc = tiktoken.get_encoding("cl100k_base")
+        
+    total_tokens = 0
     batch_size = config["batch_size"]
-    results = []
     batches = [keywords_data[i:i+batch_size] for i in range(0, len(keywords_data), batch_size)]
-
-    for idx, batch in enumerate(batches):
-        if placeholder:
-            placeholder.progress(idx / len(batches), text=f"Batch {idx+1}/{len(batches)} ({len(batch)} fraz)...")
-
+    
+    for batch in batches:
         fmt_kwargs = {
             "client_name": config["client_name"], "domain": config["domain"],
             "product_path": config.get("product_path", "/pl/product/"),
@@ -331,100 +291,107 @@ def call_openai_batch(prompt_template, keywords_data, config, placeholder=None):
             "keywords_json": json.dumps(batch, ensure_ascii=False),
         }
         prompt = prompt_template.format(**fmt_kwargs)
+        total_tokens += len(enc.encode(prompt))
+    return total_tokens
 
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
+async def fetch_batch_async(prompt, model, schema, ai_client):
+    resp = await ai_client.beta.chat.completions.parse(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        max_completion_tokens=16000,
+        response_format=schema
+    )
+    return resp.choices[0].message.parsed
+
+async def run_all_batches(prompt_template, keywords_data, config, placeholder, prompt_key):
+    batch_size = config["batch_size"]
+    ai_client = get_openai_client()
+    schema = SCHEMA_MAP[prompt_key]
+    
+    batches = [keywords_data[i:i+batch_size] for i in range(0, len(keywords_data), batch_size)]
+    tasks = []
+    
+    for batch in batches:
+        fmt_kwargs = {
+            "client_name": config["client_name"], "domain": config["domain"],
+            "product_path": config.get("product_path", "/pl/product/"),
+            "category_path": config.get("category_path", "/pl/category/"),
+            "content_path": config.get("content_path", "/pl/content/"),
+            "keywords_json": json.dumps(batch, ensure_ascii=False),
+        }
+        prompt = prompt_template.format(**fmt_kwargs)
+        tasks.append(fetch_batch_async(prompt, config["model"], schema, ai_client))
+    
+    results = []
+    total = len(tasks)
+    completed = 0
+    
+    for coro in asyncio.as_completed(tasks):
         try:
-            resp = client.chat.completions.create(
-                model=config["model"],
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1, max_tokens=16000,
-            )
-            raw = resp.choices[0].message.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-                if raw.endswith("```"):
-                    raw = raw[:-3]
-            results.extend(json.loads(raw))
-        except json.JSONDecodeError:
-            try:
-                resp2 = client.chat.completions.create(
-                    model=config["model"],
-                    messages=[{"role": "user", "content": prompt}, {"role": "assistant", "content": raw},
-                              {"role": "user", "content": "Zwróć TYLKO poprawny JSON array, bez markdown."}],
-                    temperature=0.0, max_tokens=16000,
-                )
-                raw2 = resp2.choices[0].message.content.strip()
-                if raw2.startswith("```"):
-                    raw2 = raw2.split("\n", 1)[1] if "\n" in raw2 else raw2[3:]
-                    if raw2.endswith("```"):
-                        raw2 = raw2[:-3]
-                results.extend(json.loads(raw2))
-            except Exception as e2:
-                st.error(f"Batch {idx+1}: {e2}")
-                for item in batch:
-                    kw = item if isinstance(item, str) else item.get("keyword", "?")
-                    results.append({"keyword": kw, "_error": str(e2)})
+            parsed = await coro
+            for item in parsed.items:
+                results.append(item.model_dump())
         except Exception as e:
-            st.error(f"Batch {idx+1}: {e}")
-            for item in batch:
-                kw = item if isinstance(item, str) else item.get("keyword", "?")
-                results.append({"keyword": kw, "_error": str(e)})
-
-        if idx < len(batches) - 1:
-            time.sleep(0.5)
-
+            st.error(f"Error w paczce (po 5 próbach Tenacity): {e}")
+        
+        completed += 1
+        if placeholder:
+            placeholder.progress(completed / total, text=f"Postęp: {completed}/{total} paczek...")
+            
     if placeholder:
         placeholder.progress(1.0, text="Gotowe!")
     return results
 
+def call_openai_batch(prompt_template, keywords_data, config, placeholder=None, prompt_key=""):
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    return loop.run_until_complete(run_all_batches(prompt_template, keywords_data, config, placeholder, prompt_key))
+
 
 def normalize_kw(kw):
     return str(kw).lower().strip()
-
 
 def clean_site_kw(kw):
     cleaned = re.sub(r'site:\S+', '', str(kw), flags=re.IGNORECASE)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip().lower()
     return cleaned
 
-
 def process_serp_data(serp_df, main_df, domain_check):
-    """Process SERP snapshot. Returns (results_dict, list_of_all_serp_feature_types)."""
     serp_df = serp_df.copy()
     serp_df.columns = serp_df.columns.str.strip().str.lower()
     serp_df["_kw"] = serp_df["keyword"].apply(normalize_kw)
-
     all_types = sorted(serp_df["type"].dropna().unique().tolist())
     results = {}
-
     for kw in main_df["Keyword"].unique():
         kn = normalize_kw(kw)
         kd = serp_df[serp_df["_kw"] == kn]
-
         row = dict(Pos_SEO_Explorer=None, URL_best_Explorer=None,
                    Cannibalization_URLs=None, Cannibalization_flag="NIE",
                    SERP_features=None, MM_in_SERP="NIE", TOP3_organic_URLs=None)
-
-        # SERP feature columns — default NIE for all types
         for t in all_types:
             col_name = f"SERP_{t}"
             row[col_name] = "NIE"
-
         if kd.empty:
             results[kw] = row
             continue
-
-        # Mark which SERP features are present
         kw_types = kd["type"].unique().tolist()
         for t in kw_types:
             row[f"SERP_{t}"] = "TAK"
         row["SERP_features"] = " | ".join(sorted(kw_types))
-
         org = kd[kd["type"] == "organic"].sort_values("rank_group")
         mm = org[org["domain"].str.contains(domain_check, case=False, na=False)]
-
         row["Pos_SEO_Explorer"] = int(mm["rank_group"].iloc[0]) if not mm.empty else None
         row["URL_best_Explorer"] = mm["url"].iloc[0] if not mm.empty else None
-
         if len(mm) > 1:
             row["Cannibalization_URLs"] = " | ".join(f"{r['url']} [{int(r['rank_group'])}]" for _, r in mm.iterrows())
             row["Cannibalization_flag"] = "TAK"
@@ -432,18 +399,13 @@ def process_serp_data(serp_df, main_df, domain_check):
             row["Cannibalization_URLs"] = f"{mm['url'].iloc[0]} [{int(mm['rank_group'].iloc[0])}]"
         else:
             row["Cannibalization_URLs"] = None
-
         row["MM_in_SERP"] = "TAK" if not mm.empty else "NIE"
-
         top3 = org.head(3)
         row["TOP3_organic_URLs"] = " | ".join(
             f"{r['url']} [{int(r['rank_group'])}]" for _, r in top3.iterrows() if pd.notna(r['url'])
         ) if not top3.empty else None
-
         results[kw] = row
-
     return results, all_types
-
 
 def process_site_product_data(site_df, main_df):
     site_df = site_df.copy()
@@ -463,7 +425,6 @@ def process_site_product_data(site_df, main_df):
             results[kw] = dict(Has_products="TAK" if urls else "NIE",
                                Product_URLs=" | ".join(urls) if urls else None)
     return results
-
 
 def process_site_general_data(site_df, main_df, config):
     site_df = site_df.copy()
@@ -492,7 +453,6 @@ def process_site_general_data(site_df, main_df, config):
                            URL_types_found=" | ".join(sorted(types)) if types else None)
     return results
 
-
 # ── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚙️ Konfiguracja")
@@ -503,7 +463,13 @@ with st.sidebar:
     st.session_state.config["category_path"] = st.text_input("Ścieżka kategorii", st.session_state.config["category_path"])
     st.session_state.config["content_path"] = st.text_input("Ścieżka contentu", st.session_state.config["content_path"])
     st.subheader("AI")
-    st.session_state.config["model"] = st.selectbox("Model", ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"], index=0)
+    
+    MODELS = ["gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5-mini", "gpt-5-nano", "gpt-5", "gpt-4.1"]
+    current_model = st.session_state.config.get("model", "gpt-5.4-mini")
+    if current_model not in MODELS:
+        current_model = "gpt-5.4-mini"
+    st.session_state.config["model"] = st.selectbox("Model", MODELS, index=MODELS.index(current_model))
+    
     st.session_state.config["batch_size"] = st.slider("Batch size", 5, 50, st.session_state.config["batch_size"])
     st.session_state.config["serp_domain_check"] = st.text_input("Domena w SERP", st.session_state.config["serp_domain_check"])
     st.divider()
@@ -556,9 +522,14 @@ elif CS == 1:
     st.write(f"**{len(df)}** fraz do sprawdzenia")
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step2_{date.today()}.xlsx")
+    
+    kws = df["Keyword"].tolist()
+    est_toks = estimate_tokens(st.session_state.prompts["relevant"], kws, st.session_state.config)
+    st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+    
     if st.button("🤖 Uruchom relevance check", type="primary"):
         p = st.empty()
-        res = call_openai_batch(st.session_state.prompts["relevant"], df["Keyword"].tolist(), st.session_state.config, p)
+        res = call_openai_batch(st.session_state.prompts["relevant"], kws, st.session_state.config, p, prompt_key="relevant")
         rm = {r["keyword"]: r for r in res if "keyword" in r}
         df["Relevant_for_MM"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("relevant", "TAK"))
         df["Rejection_reason"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("reason", ""))
@@ -572,16 +543,20 @@ elif CS == 2:
     st.header("Krok 3 · Klasyfikacja AI")
     df = st.session_state.df
     if "Relevant_for_MM" in df.columns:
-        r = (df["Relevant_for_MM"] == "TAK").sum()
-        x = (df["Relevant_for_MM"] == "NIE").sum()
-        st.write(f"✅ Relewantnych: **{r}** · ❌ Odrzuconych: **{x}**")
+        r_sum = (df["Relevant_for_MM"] == "TAK").sum()
+        x_sum = (df["Relevant_for_MM"] == "NIE").sum()
+        st.write(f"✅ Relewantnych: **{r_sum}** · ❌ Odrzuconych: **{x_sum}**")
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step3_{date.today()}.xlsx")
+    
+    mask = df["Relevant_for_MM"] == "TAK" if "Relevant_for_MM" in df.columns else pd.Series([True]*len(df))
+    kws = df[mask]["Keyword"].tolist()
+    est_toks = estimate_tokens(st.session_state.prompts["classify"], kws, st.session_state.config)
+    st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+    
     if st.button("🤖 Uruchom klasyfikację", type="primary"):
-        mask = df["Relevant_for_MM"] == "TAK" if "Relevant_for_MM" in df.columns else pd.Series([True]*len(df))
-        kws = df[mask]["Keyword"].tolist()
         p = st.empty()
-        res = call_openai_batch(st.session_state.prompts["classify"], kws, st.session_state.config, p)
+        res = call_openai_batch(st.session_state.prompts["classify"], kws, st.session_state.config, p, prompt_key="classify")
         rm = {r["keyword"]: r for r in res if "keyword" in r}
         for c in ["L1_Funnel_stage", "L2_Intent", "L3_MM_Segment", "Brand_flag", "Brand"]:
             df[c] = df["Keyword"].map(lambda k: rm.get(k, {}).get(c, ""))
@@ -605,17 +580,12 @@ elif CS == 3:
         if st.button("✅ Przetwórz SERP", type="primary"):
             results, all_types = process_serp_data(sdf, df, st.session_state.config["serp_domain_check"])
             st.session_state.serp_feature_cols = [f"SERP_{t}" for t in all_types]
-
-            # Apply base columns
             for c in ["Pos_SEO_Explorer", "URL_best_Explorer", "Cannibalization_URLs",
                        "Cannibalization_flag", "SERP_features", "MM_in_SERP", "TOP3_organic_URLs"]:
                 df[c] = df["Keyword"].map(lambda k: results.get(k, {}).get(c))
-
-            # Apply dynamic SERP feature columns
             for t in all_types:
                 col = f"SERP_{t}"
                 df[col] = df["Keyword"].map(lambda k: results.get(k, {}).get(col, "NIE"))
-
             st.success(f"Znaleziono **{len(all_types)}** typów SERP: {', '.join(all_types)}")
             st.session_state.df = df
             st.session_state.step = 4
@@ -654,11 +624,16 @@ elif CS == 5:
     st.write(f"**{len(hp)}** fraz z produktami do weryfikacji")
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step6_{date.today()}.xlsx")
+    
+    tc = [{"keyword": row["Keyword"], "product_urls": str(row.get("Product_URLs", ""))} for _, row in hp.iterrows()]
+    if tc:
+        est_toks = estimate_tokens(st.session_state.prompts["products_match"], tc, st.session_state.config)
+        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+    
     if st.button("🤖 Uruchom products match", type="primary"):
-        tc = [{"keyword": row["Keyword"], "product_urls": str(row.get("Product_URLs", ""))} for _, row in hp.iterrows()]
         if tc:
             p = st.empty()
-            res = call_openai_batch(st.session_state.prompts["products_match"], tc, st.session_state.config, p)
+            res = call_openai_batch(st.session_state.prompts["products_match"], tc, st.session_state.config, p, prompt_key="products_match")
             rm = {r["keyword"]: r.get("match", "NIE") for r in res if "keyword" in r}
             df["Products_match_intent"] = df["Keyword"].map(lambda k: rm.get(k, ""))
         else:
@@ -703,13 +678,18 @@ elif CS == 7:
     st.write(f"**{len(hc)}** fraz z pokryciem do weryfikacji")
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step8_{date.today()}.xlsx")
+    
+    tc = [{"keyword": row["Keyword"],
+           "site_urls": str(row.get("Site_TOP_URLs", "")),
+           "url_types": str(row.get("URL_types_found", ""))} for _, row in hc.iterrows()]
+    if tc:
+        est_toks = estimate_tokens(st.session_state.prompts["content_match"], tc, st.session_state.config)
+        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+           
     if st.button("🤖 Uruchom content match", type="primary"):
-        tc = [{"keyword": row["Keyword"],
-               "site_urls": str(row.get("Site_TOP_URLs", "")),
-               "url_types": str(row.get("URL_types_found", ""))} for _, row in hc.iterrows()]
         if tc:
             p = st.empty()
-            res = call_openai_batch(st.session_state.prompts["content_match"], tc, st.session_state.config, p)
+            res = call_openai_batch(st.session_state.prompts["content_match"], tc, st.session_state.config, p, prompt_key="content_match")
             rm = {r["keyword"]: r.get("match", "NIE") for r in res if "keyword" in r}
             df["Content_match_intent"] = df["Keyword"].map(lambda k: rm.get(k, ""))
         else:
@@ -736,15 +716,19 @@ elif CS == 8:
 
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step9_{date.today()}.xlsx")
 
+    tc = []
+    if not video_kws.empty:
+        for _, row in video_kws.iterrows():
+            tc.append({"keyword": row["Keyword"],
+                       "L2_Intent": str(row.get("L2_Intent", "")),
+                       "L3_MM_Segment": str(row.get("L3_MM_Segment", ""))})
+        est_toks = estimate_tokens(st.session_state.prompts["video_analysis"], tc, st.session_state.config)
+        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+                       
     if st.button("🤖 Uruchom video analysis", type="primary"):
         if not video_kws.empty:
-            tc = []
-            for _, row in video_kws.iterrows():
-                tc.append({"keyword": row["Keyword"],
-                           "L2_Intent": str(row.get("L2_Intent", "")),
-                           "L3_MM_Segment": str(row.get("L3_MM_Segment", ""))})
             p = st.empty()
-            res = call_openai_batch(st.session_state.prompts["video_analysis"], tc, st.session_state.config, p)
+            res = call_openai_batch(st.session_state.prompts["video_analysis"], tc, st.session_state.config, p, prompt_key="video_analysis")
             rm = {r["keyword"]: r for r in res if "keyword" in r}
             df["Video_channel"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("video_channel", ""))
             df["Video_format"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("video_format", ""))
@@ -769,8 +753,8 @@ elif CS == 9:
     st.write(f"**{len(rel)}** fraz do analizy")
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step10_{date.today()}.xlsx")
-    if st.button("🤖 Uruchom rekomendacje", type="primary"):
-        # Pre-process: extract matching category URL for each keyword
+    
+    if "Matching_category_URL" not in df.columns:
         cat_path = st.session_state.config["category_path"]
         for idx, row in rel.iterrows():
             kw = normalize_kw(row["Keyword"])
@@ -787,20 +771,25 @@ elif CS == 9:
                         best_score = score
                         best_cat = u
             df.loc[df["Keyword"] == row["Keyword"], "Matching_category_URL"] = best_cat if best_cat else ""
+        rel = df[mask]
 
-        rel = df[mask]  # refresh after adding column
-
-        ai_cols = ["Keyword", "Volume", "L1_Funnel_stage", "L2_Intent", "L3_MM_Segment",
-                   "Brand_flag", "Brand", "Pos_SEO_Explorer", "URL_best_Explorer",
-                   "Cannibalization_flag", "SERP_features", "MM_in_SERP",
-                   "Has_products", "Products_match_intent", "Product_URLs",
-                   "Site_results_count", "Site_TOP_URLs", "URL_types_found", "Content_match_intent",
-                   "Matching_category_URL", "Video_channel", "Video_format"]
-        avail = [c for c in ai_cols if c in rel.columns]
-        ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
+    ai_cols = ["Keyword", "Volume", "L1_Funnel_stage", "L2_Intent", "L3_MM_Segment",
+               "Brand_flag", "Brand", "Pos_SEO_Explorer", "URL_best_Explorer",
+               "Cannibalization_flag", "SERP_features", "MM_in_SERP",
+               "Has_products", "Products_match_intent", "Product_URLs",
+               "Site_results_count", "Site_TOP_URLs", "URL_types_found", "Content_match_intent",
+               "Matching_category_URL", "Video_channel", "Video_format"]
+    avail = [c for c in ai_cols if c in rel.columns]
+    ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
+    
+    if ta:
+        est_toks = estimate_tokens(st.session_state.prompts["action"], ta, st.session_state.config)
+        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+    
+    if st.button("🤖 Uruchom rekomendacje", type="primary"):
         if ta:
             p = st.empty()
-            res = call_openai_batch(st.session_state.prompts["action"], ta, st.session_state.config, p)
+            res = call_openai_batch(st.session_state.prompts["action"], ta, st.session_state.config, p, prompt_key="action")
             rm = {r["keyword"]: r for r in res if "keyword" in r}
             for c in ["Action_type", "Action_detail", "Target_URL_suggested"]:
                 df[c] = df["Keyword"].map(lambda k: rm.get(k, {}).get(c, ""))
@@ -829,7 +818,6 @@ elif CS == 10:
         v = (df["Cannibalization_flag"] == "TAK").sum() if "Cannibalization_flag" in df.columns else "—"
         st.metric("Kanibalizacja", v)
 
-    # Video stats
     if "SERP_video" in df.columns:
         vc = (df["SERP_video"] == "TAK").sum()
         if vc:
