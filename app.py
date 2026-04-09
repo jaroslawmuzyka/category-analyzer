@@ -183,6 +183,7 @@ ZASADA #1 — BRAK POZYCJI TO NIE JEST "OK":
 Jeśli MM_in_SERP = "NIE", to ZAWSZE wymaga akcji.
 ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI
 ZASADA #3 — WALIDACJA TARGET URL
+Twoim głównym oparciem jest pole "Sitemap_TOP10" dostarczające w 100% pewnych, zmapowanych lokalnie danych z Sitemapy sklepu. "Site_TOP_URLs" to informacja pomocnicza (wybór Google).
 ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE (co optymalizować).
 
 Zwróć Action_type, Action_detail, Target_URL_suggested.
@@ -197,7 +198,7 @@ Dane:
 def init_state():
     defaults = {"df": None, "step": 0, "config": DEFAULT_CONFIG.copy(),
                 "prompts": {k: v for k, v in PROMPTS.items()}, "serp_feature_cols": [],
-                "session_total_cost": 0.0, "last_cost_info": ""}
+                "session_total_cost": 0.0, "last_cost_info": "", "sitemaps": {}}
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -208,7 +209,7 @@ def init_state():
 
 init_state()
 
-STEPS = ["Import fraz", "Relevance", "Klasyfikacja", "SERP snapshot",
+STEPS = ["Import fraz", "Relevance", "Klasyfikacja", "Sitemap XML", "SERP snapshot",
          "site:…/product/", "Product match", "site:domain", "Content match",
          "Video analysis", "Rekomendacje", "Eksport"]
 
@@ -617,9 +618,84 @@ elif CS == 2:
         st.rerun()
     nav_buttons(2)
 
-# ── STEP 3: SERP snapshot ───────────────────────────────────
+# ── STEP 3: Sitemap XML ───────────────────────────────────
 elif CS == 3:
-    st.header("Krok 4 · Import SERP snapshot")
+    st.header("Krok 4 · Wczytywanie i Mapowanie Sitemapy XML")
+    df = st.session_state.df
+    st.write("Wgraj pliki Sitemaps.xml dla poszczególnych stref (nieobowiązkowe, ale bardzo zalecane do mapowania architektury).")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        cat_file = st.file_uploader("Kategorie (XML)", type=["xml"], key="sm_cat")
+        cat_mod_file = st.file_uploader("Kategorie modeli (XML)", type=["xml"], key="sm_catmod")
+    with col2:
+        filt_cat_file = st.file_uploader("Filtry - Baza Kategorii (XML)", type=["xml"], key="sm_filtcat")
+        filt_file = st.file_uploader("Filtry - Parametry (XML)", type=["xml"], key="sm_filt")
+    with col3:
+        cont_file = st.file_uploader("Content (XML)", type=["xml"], key="sm_cont")
+        search_file = st.file_uploader("Searchlist (XML)", type=["xml"], key="sm_search")
+        serv_file = st.file_uploader("Service (XML)", type=["xml"], key="sm_serv")
+
+    def parse_sm(file):
+        if not file: return []
+        import re
+        txt = file.read().decode('utf-8')
+        return re.findall(r'<loc>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</loc>', txt)
+
+    if st.button("📥 Przetwórz Sitemapy", type="primary"):
+        st.session_state.sitemaps = {
+            "Kategorie": parse_sm(cat_file),
+            "Kategorie modeli": parse_sm(cat_mod_file),
+            "Filtry": parse_sm(filt_cat_file) + parse_sm(filt_file),
+            "Content poradnik": parse_sm(cont_file),
+            "Lista wyszukiwania": parse_sm(search_file),
+            "Serwis lokalny": parse_sm(serv_file),
+        }
+        st.success("Sitemapy wczytane poprawnie!")
+        
+    sitemaps = st.session_state.get("sitemaps", {})
+    if any(sitemaps.values()):
+        st.write("Statystyki wczytanych adresów:")
+        for k, v in sitemaps.items():
+            if v:
+                st.write(f"- {k}: **{len(v)}** adresów")
+            
+        if st.button("🤖 Mapuj adresy z Sitemapy (Lokalnie, 0$)", type="primary"):
+            from rapidfuzz import process
+            
+            segment_to_sm = {
+                "Kategoria producenta": "Kategorie",
+                "Kategoria akcesoriów": "Kategorie",
+                "Kategoria wariantu": "Kategorie",
+                "Kategoria modelu": "Kategorie modeli",
+                "Filtr kategorii": "Filtry",
+                "Content poradnik": "Content poradnik",
+                "Content versus": "Content poradnik",
+                "Listing tematyczny": "Lista wyszukiwania",
+                "Listing cenowa": "Lista wyszukiwania",
+                "Serwis lokalny": "Serwis lokalny"
+            }
+            
+            def get_top_urls(kw, segment):
+                sm_key = segment_to_sm.get(segment)
+                if not sm_key or sm_key not in sitemaps or not sitemaps[sm_key]:
+                    return ""
+                urls = sitemaps[sm_key]
+                kw_norm = str(kw).replace(" ", "-").lower()
+                results = process.extract(kw_norm, urls, limit=10)
+                return " | ".join(r[0] for r in results)
+                
+            df["Sitemap_TOP10"] = df.apply(lambda row: get_top_urls(row["Keyword"], str(row.get("L3_MM_Segment", ""))), axis=1)
+            st.session_state.df = df
+            st.success("Zamapowano Sitemapy!")
+            st.session_state.step = 4
+            st.rerun()
+            
+    nav_buttons(3)
+
+# ── STEP 4: SERP snapshot ───────────────────────────────────
+elif CS == 4:
+    st.header("Krok 5 · Import SERP snapshot")
     df = st.session_state.df
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step4_{date.today()}.xlsx")
@@ -640,13 +716,13 @@ elif CS == 3:
                 df[col] = df["Keyword"].map(lambda k: results.get(k, {}).get(col, "NIE"))
             st.success(f"Znaleziono **{len(all_types)}** typów SERP: {', '.join(all_types)}")
             st.session_state.df = df
-            st.session_state.step = 4
+            st.session_state.step = 5
             st.rerun()
-    nav_buttons(3)
+    nav_buttons(4)
 
-# ── STEP 4: site:…/product/ ─────────────────────────────────
-elif CS == 4:
-    st.header("Krok 5 · Import site:…/product/")
+# ── STEP 5: site:…/product/ ─────────────────────────────────
+elif CS == 5:
+    st.header("Krok 6 · Import site:…/product/")
     df = st.session_state.df
     cfg = st.session_state.config
     st.info(f"Wgraj plik z wynikami: **fraza site:{cfg['domain']}{cfg['product_path']}**")
@@ -664,13 +740,13 @@ elif CS == 4:
             for c in ["Has_products", "Product_URLs"]:
                 df[c] = df["Keyword"].map(lambda k: r.get(k, {}).get(c))
             st.session_state.df = df
-            st.session_state.step = 5
+            st.session_state.step = 6
             st.rerun()
-    nav_buttons(4)
+    nav_buttons(5)
 
-# ── STEP 5: Products match ───────────────────────────────────
-elif CS == 5:
-    st.header("Krok 6 · Products match intent")
+# ── STEP 6: Products match ───────────────────────────────────
+elif CS == 6:
+    st.header("Krok 7 · Products match intent")
     df = st.session_state.df
     hp = df[df.get("Has_products", pd.Series()) == "TAK"] if "Has_products" in df.columns else pd.DataFrame()
     st.write(f"**{len(hp)}** fraz z produktami do weryfikacji")
@@ -691,13 +767,13 @@ elif CS == 5:
         else:
             df["Products_match_intent"] = ""
         st.session_state.df = df
-        st.session_state.step = 6
+        st.session_state.step = 7
         st.rerun()
-    nav_buttons(5)
+    nav_buttons(6)
 
-# ── STEP 6: site:domain ─────────────────────────────────────
-elif CS == 6:
-    st.header("Krok 7 · Import site:domain")
+# ── STEP 7: site:domain ─────────────────────────────────────
+elif CS == 7:
+    st.header("Krok 8 · Import site:domain")
     df = st.session_state.df
     cfg = st.session_state.config
     st.info(f"Wgraj plik z wynikami: **fraza site:{cfg['domain']}**")
@@ -715,13 +791,13 @@ elif CS == 6:
             for c in ["Site_results_count", "Site_TOP_URLs", "URL_types_found"]:
                 df[c] = df["Keyword"].map(lambda k: r.get(k, {}).get(c))
             st.session_state.df = df
-            st.session_state.step = 7
+            st.session_state.step = 8
             st.rerun()
-    nav_buttons(6)
+    nav_buttons(7)
 
-# ── STEP 7: Content match ────────────────────────────────────
-elif CS == 7:
-    st.header("Krok 8 · Content match intent")
+# ── STEP 8: Content match ────────────────────────────────────
+elif CS == 8:
+    st.header("Krok 9 · Content match intent")
     df = st.session_state.df
     if "Site_results_count" in df.columns:
         hc = df[df["Site_results_count"].fillna(0).astype(float).astype(int) > 0]
@@ -747,13 +823,13 @@ elif CS == 7:
         else:
             df["Content_match_intent"] = ""
         st.session_state.df = df
-        st.session_state.step = 8
+        st.session_state.step = 9
         st.rerun()
-    nav_buttons(7)
+    nav_buttons(8)
 
-# ── STEP 8: Video analysis ──────────────────────────────────
-elif CS == 8:
-    st.header("Krok 9 · Video analysis")
+# ── STEP 9: Video analysis ──────────────────────────────────
+elif CS == 9:
+    st.header("Krok 10 · Video analysis")
     df = st.session_state.df
 
     video_col = "SERP_video"
@@ -792,13 +868,13 @@ elif CS == 8:
             st.info("Brak fraz z Video w SERP — pomijam.")
 
         st.session_state.df = df
-        st.session_state.step = 9
+        st.session_state.step = 10
         st.rerun()
-    nav_buttons(8)
+    nav_buttons(9)
 
-# ── STEP 9: Recommendations ─────────────────────────────────
-elif CS == 9:
-    st.header("Krok 10 · Rekomendacje AI")
+# ── STEP 10: Recommendations ─────────────────────────────────
+elif CS == 10:
+    st.header("Krok 11 · Rekomendacje AI")
     df = st.session_state.df
     mask = df["Relevant_for_MM"] == "TAK" if "Relevant_for_MM" in df.columns else pd.Series([True]*len(df))
     rel = df[mask]
@@ -830,7 +906,7 @@ elif CS == 9:
                "Cannibalization_flag", "SERP_features", "MM_in_SERP",
                "Has_products", "Products_match_intent", "Product_URLs",
                "Site_results_count", "Site_TOP_URLs", "URL_types_found", "Content_match_intent",
-               "Matching_category_URL", "Video_channel", "Video_format"]
+               "Matching_category_URL", "Video_channel", "Video_format", "Sitemap_TOP10"]
     avail = [c for c in ai_cols if c in rel.columns]
     ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
     
@@ -846,13 +922,13 @@ elif CS == 9:
             for c in ["Action_type", "Action_detail", "Target_URL_suggested"]:
                 df[c] = df["Keyword"].map(lambda k: rm.get(k, {}).get(c, ""))
         st.session_state.df = df
-        st.session_state.step = 10
+        st.session_state.step = 11
         st.rerun()
-    nav_buttons(9)
+    nav_buttons(10)
 
-# ── STEP 10: Export ──────────────────────────────────────────
-elif CS == 10:
-    st.header("Krok 11 · Eksport finalny")
+# ── STEP 11: Export ──────────────────────────────────────────
+elif CS == 11:
+    st.header("Krok 12 · Eksport finalny")
     df = st.session_state.df
     st.success(f"Analiza zakończona! **{len(df)}** fraz · **{len(df.columns)}** kolumn")
 
