@@ -67,14 +67,7 @@ class ProductsMatchResponse(BaseModel):
 
 
 
-class VideoAnalysisItem(BaseModel):
-    keyword: str
-    video_channel: str
-    video_format: str
-    video_note: str
 
-class VideoAnalysisResponse(BaseModel):
-    items: list[VideoAnalysisItem]
 
 class ActionItem(BaseModel):
     keyword: str
@@ -89,7 +82,6 @@ SCHEMA_MAP = {
     "relevant": RelevantResponse,
     "classify": ClassifyResponse,
     "products_match": ProductsMatchResponse,
-    "video_analysis": VideoAnalysisResponse,
     "action": ActionResponse
 }
 
@@ -159,26 +151,19 @@ Dane:
 
 
 
-    "video_analysis": """Jesteś ekspertem video marketingu. Oceń:
-1. Kanał video (KANAŁ KLIENTA, INFLUENCER, OBA)
-2. Konkretny format (np. Premiera, Unboxing, Test, Recenzja dłuższa)
 
-Bierz pod uwagę status czasowy modelu na kwiecień 2026.
-
-Odpowiedz zgodnie z wymaganym schematem JSON.
-
-Dane:
-{keywords_json}""",
 
     "action": """Jesteś Senior SEO Strategiem dla {client_name} ({domain}).
 
 ZASADA #1 — BRAK POZYCJI TO NIE JEST "OK":
 Jeśli MM_in_SERP = "NIE", to ZAWSZE wymaga akcji.
 ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI
-ZASADA #3 — WALIDACJA TARGET URL
-Twoim głównym oparciem jest pole "Sitemap_TOP10" dostarczające w 100% pewnych, zmapowanych lokalnie danych z Sitemapy sklepu. "Site_TOP_URLs" to informacja pomocnicza (wybór Google).
-ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE.
-ZASADA #5 — EKSTREMALNIE KRÓTKI OPIS. Action_detail ma być bezlitosnym konkretem (max 1 trafne zdanie), np. "Brak w sitemap i site:domena - rekomendujemy utworzenie nowej kategorii.". NIE PIOSZ o optymalizacji SEO, title, on-page czy linkowaniu wewnętrznym. Interesują nas tylko luki strukturalne!
+ZASADA #3 — WALIDACJA TARGET URL:
+Jeśli pole "Sitemap_TOP10" lub "Matching_category_URL" zawiera adres idealnie trafiający w intencję, jako Action_type wpisz "Mapowanie", a jako Action_detail wpisz: "Znaleziono docelowy adres w Sitemap, rekomendujemy mapowanie.". Wtedy Target_URL_suggested to ten znaleziony adres.
+Jeśli w "Sitemap_TOP10", "Matching_category_URL" i "Site_TOP_URLs" NIE MA nic sensownego, jako Action_type wpisz "Nowy URL", a jako Action_detail wpisz: "Brak docelowego adresu URL, rekomendujemy utworzenie podstrony." - dopiero wtedy zasugeruj zupełnie nowy wymyślony Target_URL.
+Wykorzystaj "Sitemap_TOP10" jako niepodważalne dowody na to, że URL już w sklepie istnieje!
+ZASADA #4 — EKSTREMALNIE KRÓTKI OPIS. Action_detail ma być bezlitosnym konkretem (max 1 krótkie zdanie, opisujące tylko luki lub sukcesy strukturalne). Błagam, nie pisz o zmianie "meta title" ani optymalizacji treści.
+ZASADA #5 — LOGICZNA SPÓJNOŚĆ: Nie możesz pisać "Brak adresu w sitemap", jeśli kopiujesz ten adres do sugerowanych pole position prosto ze ścieżki "Sitemap_TOP10". Zawsze czytaj co znajduje się w Sitemap_TOP10 przed wydaniem wyroku.
 
 Zwróć Action_type, Action_detail, Target_URL_suggested.
 
@@ -205,7 +190,7 @@ init_state()
 
 STEPS = ["Import fraz", "Relevance", "Klasyfikacja", "Sitemap XML", "SERP snapshot",
          "site:…/product/", "Product match", "site:domain",
-         "Video analysis", "Rekomendacje", "Eksport"]
+         "Rekomendacje", "Eksport"]
 
 # ── Helpers ──────────────────────────────────────────────────
 def export_xlsx(df):
@@ -441,6 +426,19 @@ def process_serp_data(serp_df, main_df, domain_check):
         row["TOP3_organic_URLs"] = " | ".join(
             f"{r['url']} [{int(r['rank_group'])}]" for _, r in top3.iterrows() if pd.notna(r['url'])
         ) if not top3.empty else None
+        
+        video_rows = kd[kd["type"] == "video"]
+        if not video_rows.empty and "rank_absolute" in kd.columns:
+            row["Video_Position_SERP"] = int(video_rows["rank_absolute"].min())
+        else:
+            row["Video_Position_SERP"] = None
+            
+        short_video_rows = kd[kd["type"] == "short_videos"]
+        if not short_video_rows.empty and "rank_absolute" in kd.columns:
+            row["Short_Videos_Position_SERP"] = int(short_video_rows["rank_absolute"].min())
+        else:
+            row["Short_Videos_Position_SERP"] = None
+            
         results[kw] = row
     return results, all_types
 
@@ -710,7 +708,8 @@ elif CS == 4:
             results, all_types = process_serp_data(sdf, df, st.session_state.config["serp_domain_check"])
             st.session_state.serp_feature_cols = [f"SERP_{t}" for t in all_types]
             for c in ["Pos_SEO_Explorer", "URL_best_Explorer", "Cannibalization_URLs",
-                       "Cannibalization_flag", "SERP_features", "MM_in_SERP", "TOP3_organic_URLs"]:
+                       "Cannibalization_flag", "SERP_features", "MM_in_SERP", "TOP3_organic_URLs",
+                       "Video_Position_SERP", "Short_Videos_Position_SERP"]:
                 df[c] = df["Keyword"].map(lambda k: results.get(k, {}).get(c))
             for t in all_types:
                 col = f"SERP_{t}"
@@ -798,54 +797,9 @@ elif CS == 7:
 
 
 
-# ── STEP 8: Video analysis ──────────────────────────────────
+# ── STEP 8: Recommendations ─────────────────────────────────
 elif CS == 8:
-    st.header("Krok 9 · Video analysis")
-    df = st.session_state.df
-
-    video_col = "SERP_video"
-    if video_col in df.columns:
-        video_kws = df[df[video_col] == "TAK"]
-    else:
-        video_kws = pd.DataFrame()
-
-    st.write(f"**{len(video_kws)}** fraz z Video w SERP")
-    if not video_kws.empty:
-        st.dataframe(video_kws[["Keyword", "Volume", "L3_MM_Segment"]].head(30), use_container_width=True)
-
-    st.download_button("📥 XLSX", export_xlsx(df), f"seo_step9_{date.today()}.xlsx")
-
-    tc = []
-    if not video_kws.empty:
-        for _, row in video_kws.iterrows():
-            tc.append({"keyword": row["Keyword"],
-                       "L2_Intent": str(row.get("L2_Intent", "")),
-                       "L3_MM_Segment": str(row.get("L3_MM_Segment", ""))})
-        est_toks, cost_usd = estimate_tokens(st.session_state.prompts["video_analysis"], tc, st.session_state.config)
-        st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
-                       
-    if st.button("🤖 Uruchom video analysis", type="primary"):
-        if not video_kws.empty:
-            p = st.empty()
-            res = call_openai_batch(st.session_state.prompts["video_analysis"], tc, st.session_state.config, p, prompt_key="video_analysis")
-            rm = {r["keyword"]: r for r in res if "keyword" in r}
-            df["Video_channel"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("video_channel", ""))
-            df["Video_format"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("video_format", ""))
-            df["Video_note"] = df["Keyword"].map(lambda k: rm.get(k, {}).get("video_note", ""))
-        else:
-            df["Video_channel"] = ""
-            df["Video_format"] = ""
-            df["Video_note"] = ""
-            st.info("Brak fraz z Video w SERP — pomijam.")
-
-        st.session_state.df = df
-        st.session_state.step = 9
-        st.rerun()
-    nav_buttons(8)
-
-# ── STEP 9: Recommendations ─────────────────────────────────
-elif CS == 9:
-    st.header("Krok 10 · Rekomendacje AI")
+    st.header("Krok 9 · Rekomendacje AI")
     df = st.session_state.df
     mask = df["Relevant_for_MM"] == "TAK" if "Relevant_for_MM" in df.columns else pd.Series([True]*len(df))
     rel = df[mask]
@@ -877,7 +831,7 @@ elif CS == 9:
                "Cannibalization_flag", "SERP_features", "MM_in_SERP",
                "Has_products", "Products_match_intent", "Product_URLs",
                "Site_results_count", "Site_TOP_URLs", "URL_types_found",
-               "Matching_category_URL", "Video_channel", "Video_format", "Sitemap_TOP10"]
+               "Matching_category_URL", "Video_Position_SERP", "Short_Videos_Position_SERP", "Sitemap_TOP10"]
     avail = [c for c in ai_cols if c in rel.columns]
     ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
     
@@ -911,13 +865,13 @@ elif CS == 9:
             df["Target_URL_is_NEW"] = df.apply(is_new_url, axis=1)
             
         st.session_state.df = df
-        st.session_state.step = 10
+        st.session_state.step = 9
         st.rerun()
-    nav_buttons(9)
+    nav_buttons(8)
 
-# ── STEP 10: Export ──────────────────────────────────────────
-elif CS == 10:
-    st.header("Krok 11 · Eksport finalny")
+# ── STEP 9: Export ──────────────────────────────────────────
+elif CS == 9:
+    st.header("Krok 10 · Eksport finalny")
     df = st.session_state.df
     st.success(f"Analiza zakończona! **{len(df)}** fraz · **{len(df.columns)}** kolumn")
 
@@ -967,4 +921,4 @@ elif CS == 10:
             st.subheader("Rozkład segmentów")
             st.bar_chart(segs)
 
-    nav_buttons(10)
+    nav_buttons(9)

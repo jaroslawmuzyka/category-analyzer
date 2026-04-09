@@ -1,0 +1,51 @@
+Columns:
+['Keyword', 'Volume', 'Relevant_for_MM', 'Rejection_reason', 'L1_Funnel_stage', 'L2_Intent', 'L3_MM_Segment', 'Brand_flag', 'Brand', 'Sitemap_TOP10', 'Pos_SEO_Explorer', 'URL_best_Explorer', 'Cannibalization_URLs', 'Cannibalization_flag', 'SERP_features', 'MM_in_SERP', 'TOP3_organic_URLs', 'SERP_compare_sites', 'SERP_images', 'SERP_knowledge_graph', 'SERP_local_pack', 'SERP_organic', 'SERP_people_also_ask', 'SERP_people_also_search', 'SERP_popular_products', 'SERP_short_videos', 'SERP_video', 'Has_products', 'Product_URLs', 'Products_match_intent', 'Site_results_count', 'Site_TOP_URLs', 'URL_types_found', 'Video_channel', 'Video_format', 'Video_note', 'Matching_category_URL', 'Action_type', 'Action_detail', 'Target_URL_suggested', 'Target_URL_is_NEW', 'Keyword.1', 'Unnamed: 42']
+
+--- Row 1 ---
+{'Keyword': 'iphone 16', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-16-70149.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 16', 'Unnamed: 42': nan}
+
+--- Row 2 ---
+{'Keyword': 'iphone 16 pro', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-16-pro-70150.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 16 pro', 'Unnamed: 42': nan}
+
+--- Row 3 ---
+{'Keyword': 'iphone 15', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-15-70017.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 15', 'Unnamed: 42': 'Dlaczego dostałem rekomendacje że nie ma tej kategorii a ja ją widzę w kolumnie z adresami z sitemap: https://mediamarkt.pl/pl/category/apple-iphone-15-70017.html - nawet adres w Target_URL_sugessted jest prawidłowy i w kolejnej kolumnie nie jest oznaczony jako nowy co jest sprzeczne z kolumną "Action type" i "Action details"'}
+
+--- Row 4 ---
+{'Keyword': 'iphone 17', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-17-70403.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 17', 'Unnamed: 42': nan}
+
+--- Row 5 ---
+{'Keyword': 'iphone 17 pro', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-17-pro-70405.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 17 pro', 'Unnamed: 42': nan}
+
+--- Row 6 ---
+{'Keyword': 'iphone 16 pro max', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-16-pro-max-70152.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 16 pro max', 'Unnamed: 42': nan}
+
+--- Row 7 ---
+{'Keyword': 'iphone 14', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-14-70021.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 14', 'Unnamed: 42': nan}
+
+--- Row 8 ---
+{'Keyword': 'iphone 15 pro', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-15-pro-70019.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 15 pro', 'Unnamed: 42': nan}
+
+--- Row 9 ---
+{'Keyword': 'iphone 17 pro max', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-17-pro-max-70406.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 17 pro max', 'Unnamed: 42': nan}
+
+--- Row 10 ---
+{'Keyword': 'iphone 11', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-11-70000.html', 'Target_URL_is_NEW': 'NEW', 'Keyword.1': 'iphone 11', 'Unnamed: 42': nan}
+
+--- Row 11 ---
+{'Keyword': 'krem do twarzy', 'Target_URL_suggested': nan, 'Target_URL_is_NEW': nan, 'Keyword.1': 'krem do twarzy', 'Unnamed: 42': nan}
+
+--- Row 12 ---
+{'Keyword': 'iphone 14 pro', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-14-pro-70023.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 14 pro', 'Unnamed: 42': nan}
+
+--- Row 13 ---
+{'Keyword': 'iphone 16e', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-16e-70253.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 16e', 'Unnamed: 42': nan}
+
+--- Row 14 ---
+{'Keyword': 'iphone 13 pro', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-13-pro-70000.html', 'Target_URL_is_NEW': 'NEW', 'Keyword.1': 'iphone 13 pro', 'Unnamed: 42': nan}
+
+--- Row 15 ---
+{'Keyword': 'poco x7 pro', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/poco-x7-pro-70000.html', 'Target_URL_is_NEW': 'NEW', 'Keyword.1': 'poco x7 pro', 'Unnamed: 42': nan}
+
+--- Row 16 ---
+{'Keyword': 'iphone 14 pro max', 'Target_URL_suggested': 'https://mediamarkt.pl/pl/category/apple-iphone-14-pro-70023.html', 'Target_URL_is_NEW': nan, 'Keyword.1': 'iphone 14 pro max', 'Unnamed: 42': nan}
+
