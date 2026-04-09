@@ -622,6 +622,7 @@ elif CS == 3:
     with col1:
         cat_file = st.file_uploader("Kategorie (XML)", type=["xml"], key="sm_cat")
         cat_mod_file = st.file_uploader("Kategorie modeli (XML)", type=["xml"], key="sm_catmod")
+        prod_files = st.file_uploader("Produkty PDP (XML)", type=["xml"], key="sm_prod", accept_multiple_files=True)
     with col2:
         filt_cat_file = st.file_uploader("Filtry - Baza Kategorii (XML)", type=["xml"], key="sm_filtcat")
         filt_file = st.file_uploader("Filtry - Parametry (XML)", type=["xml"], key="sm_filt")
@@ -637,6 +638,11 @@ elif CS == 3:
         return re.findall(r'<loc>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</loc>', txt)
 
     if st.button("📥 Przetwórz Sitemapy", type="primary"):
+        prod_urls = []
+        if prod_files:
+            for pf in prod_files:
+                prod_urls.extend(parse_sm(pf))
+                
         st.session_state.sitemaps = {
             "Kategorie": parse_sm(cat_file),
             "Kategorie modeli": parse_sm(cat_mod_file),
@@ -644,6 +650,7 @@ elif CS == 3:
             "Content poradnik": parse_sm(cont_file),
             "Lista wyszukiwania": parse_sm(search_file),
             "Serwis lokalny": parse_sm(serv_file),
+            "Produkty PDP": prod_urls,
         }
         st.success("Sitemapy wczytane poprawnie!")
         
@@ -666,8 +673,8 @@ elif CS == 3:
                 "Content poradnik": "Content poradnik",
                 "Content versus": "Content poradnik",
                 "Listing tematyczny": "Lista wyszukiwania",
-                "Listing cenowa": "Lista wyszukiwania",
-                "Serwis lokalny": "Serwis lokalny"
+                "Serwis lokalny": "Serwis lokalny",
+                "PDP": "Produkty PDP"
             }
             
             def get_top_urls(kw, segment):
@@ -789,37 +796,7 @@ elif CS == 7:
             st.rerun()
     nav_buttons(7)
 
-# ── STEP 8: Content match ────────────────────────────────────
-elif CS == 8:
-    st.header("Krok 9 · Content match intent")
-    df = st.session_state.df
-    if "Site_results_count" in df.columns:
-        hc = df[df["Site_results_count"].fillna(0).astype(float).astype(int) > 0]
-    else:
-        hc = pd.DataFrame()
-    st.write(f"**{len(hc)}** fraz z pokryciem do weryfikacji")
-    st.dataframe(df.head(30), use_container_width=True)
-    st.download_button("📥 XLSX", export_xlsx(df), f"seo_step8_{date.today()}.xlsx")
-    
-    tc = [{"keyword": row["Keyword"],
-           "site_urls": str(row.get("Site_TOP_URLs", "")),
-           "url_types": str(row.get("URL_types_found", ""))} for _, row in hc.iterrows()]
-    if tc:
-        est_toks, cost_usd = estimate_tokens(st.session_state.prompts["content_match"], tc, st.session_state.config)
-        st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
-           
-    if st.button("🤖 Uruchom content match", type="primary"):
-        if tc:
-            p = st.empty()
-            res = call_openai_batch(st.session_state.prompts["content_match"], tc, st.session_state.config, p, prompt_key="content_match")
-            rm = {r["keyword"]: r.get("match", "NIE") for r in res if "keyword" in r}
-            df["Content_match_intent"] = df["Keyword"].map(lambda k: rm.get(k, ""))
-        else:
-            df["Content_match_intent"] = ""
-        st.session_state.df = df
-        st.session_state.step = 9
-        st.rerun()
-    nav_buttons(8)
+
 
 # ── STEP 8: Video analysis ──────────────────────────────────
 elif CS == 8:
