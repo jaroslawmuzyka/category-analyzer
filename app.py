@@ -62,11 +62,46 @@ Frazy:
     "classify": """Jesteś ekspertem SEO dla sklepu e-commerce {client_name} ({domain}).
 Klasyfikujesz frazy kluczowe. Dla KAŻDEJ frazy określ:
 
-1. L1_Funnel_stage: Awareness / Consideration / Decision / Retention
-2. L2_Intent: Brand Navigational / Branded Informational / Branded Versus / Brand Discovery / Brand Transactional / Branded Commercial - Filter / Branded Commercial - SKU / Generic Commercial / Generic Transactional / Commercial Research / Lifestyle / Inspirational / SEO: akcesoria / Retention / Service / Retailer Navigational
-3. L3_MM_Segment: Kategoria modelu / Kategoria producenta / Kategoria wariantu / Filtr kategorii / Kategoria akcesoriów / Content poradnik / Content versus / Specials premiera / Listing tematyczny / Listing cenowa / PDP / Serwis lokalny
-4. Brand_flag: TAK/NIE
-5. Brand: nazwa marki lub puste
+1. L1_Funnel_stage — etap lejka zakupowego:
+   - Awareness — ogólne zainteresowanie, premiery, nowości, trendy (np. "iphone 18", "nowy samsung 2026", "najlepsze smartfony")
+   - Consideration — porównywanie, szukanie konkretnego modelu, recenzje (np. "iphone 16 pro", "poco x7 pro opinie", "samsung vs iphone")
+   - Decision — gotowość do zakupu, szuka ceny, wariantu, filtruje parametry (np. "iphone 16 pro 256gb cena", "kup samsung galaxy s25", "smartfon do 2000 zł")
+   - Retention — po zakupie, serwis, wsparcie, naprawy (np. "wymiana baterii iphone", "jak zresetować samsung")
+
+2. L2_Intent — PRZYKŁADY są kluczowe, czytaj uważnie:
+   - Brand Navigational — użytkownik szuka KONKRETNEGO modelu, chce go znaleźć w sklepie: "iphone 16 pro", "samsung galaxy s25 ultra", "poco x7 pro". To NIE jest informational — to nawigacja do produktu.
+   - Branded Informational — szuka INFORMACJI o produkcie: "jak wyłączyć iphone", "iphone 16 recenzja", "samsung galaxy a56 opinie"
+   - Branded Versus — porównanie modeli: "iphone 15 vs 16", "samsung s25 vs iphone 16"
+   - Brand Discovery — szuka marki ogólnie: "iphone", "samsung galaxy", "xiaomi"
+   - Brand Transactional — chce KUPIĆ konkretny wariant z ceną: "iphone 15 pro 256gb cena", "samsung galaxy s25 kup"
+   - Branded Commercial - Filter — filtruje po parametrach: "iphone 16 pro 256gb", "samsung galaxy czarny 512gb"
+   - Branded Commercial - SKU — konkretny numer modelu/EAN
+   - Generic Commercial — szuka kategorii bez brandu: "smartfon do 2000 zł", "telefon z dobrym aparatem"
+   - Generic Transactional — chce kupić bez brandu: "kup smartfon", "tani telefon"
+   - Commercial Research — rankingi, zestawienia: "najlepszy smartfon 2025", "top 10 telefonów"
+   - Lifestyle / Inspirational — premiery, zapowiedzi: "iphone 18 kiedy premiera", "nowy samsung 2026"
+   - SEO: akcesoria — etui, ładowarki, folie: "etui iphone 16 pro", "ładowarka samsung"
+   - Retention / Service — serwis, naprawy: "wymiana baterii iphone", "serwis samsung warszawa"
+   - Retailer Navigational — szuka sklepu: "mediamarkt smartfony", "mediamarkt iphone"
+
+3. L3_MM_Segment — segment w sklepie:
+   - Kategoria modelu — strona modelu (np. "iphone 16 pro" → /category/apple-iphone-16-pro/)
+   - Kategoria producenta — strona marki (np. "iphone" → /category/apple/)
+   - Kategoria wariantu — wariant z ceną (np. "iphone 15 pro 256gb cena")
+   - Filtr kategorii — filtr parametryczny (np. "iphone 16 pro 256gb", "samsung galaxy czarny")
+   - Kategoria akcesoriów — etui, folie, ładowarki
+   - Content poradnik — blog how-to (np. "jak zresetować iphone")
+   - Content versus — porównania (np. "iphone 15 vs 16")
+   - Specials premiera — premiery nowych modeli
+   - Listing tematyczny — ranking (np. "najlepsze smartfony 2025")
+   - Listing cenowa — cenówki (np. "smartfon do 1000 zł")
+   - PDP — konkretny SKU
+   - Serwis lokalny — naprawy, serwis w mieście
+
+4. Brand_flag — TAK/NIE
+5. Brand — nazwa marki lub puste
+
+WAŻNE: Sama nazwa modelu (np. "iphone 16 pro") to Brand Navigational + Consideration + Kategoria modelu — użytkownik szuka tego modelu w sklepie. To NIE jest "Branded Informational" (chyba że fraza zawiera słowa typu "opinie", "recenzja", "jak", "czy warto").
 
 Odpowiedz WYŁĄCZNIE jako JSON array:
 {{"keyword": "fraza", "L1_Funnel_stage": "...", "L2_Intent": "...", "L3_MM_Segment": "...", "Brand_flag": "TAK/NIE", "Brand": "..."}}
@@ -87,8 +122,15 @@ Dane:
 
     "content_match": """Jesteś ekspertem SEO. Sprawdzasz, czy strony z {domain} odpowiadają intencji frazy.
 
-Dla każdej frazy dostajesz URL-e znalezione przez site:{domain}.
-Oceń, czy pasują do intencji użytkownika.
+Dla każdej frazy dostajesz:
+- site_urls: URL-e znalezione przez site:{domain}
+- url_types: jakie TYPY stron znaleziono (product, category, content, other)
+
+ZASADY OCENY:
+- Jeśli fraza dotyczy MODELU (np. "iphone 16 pro") — użytkownik potrzebuje strony KATEGORII (/category/) ze wszystkimi wariantami. Samo posiadanie stron produktowych (/product/) to NIE JEST dopasowanie — PDP pokazuje jeden wariant, a user chce zobaczyć wszystkie.
+- Jeśli fraza dotyczy INFORMACJI (np. "jak zresetować iphone") — potrzebna jest strona /content/.
+- Jeśli fraza dotyczy AKCESORIÓW (np. "etui iphone 16") — potrzebna jest strona kategorii akcesoriów, nie strona telefonu.
+- Jeśli fraza dotyczy FILTRA (np. "iphone 16 pro 256gb") — potrzebna jest strona kategorii z filtrem, nie PDP.
 
 Odpowiedz WYŁĄCZNIE jako JSON array:
 {{"keyword": "fraza", "match": "TAK" lub "NIE"}}
@@ -99,17 +141,35 @@ Dane:
     "video_analysis": """Jesteś ekspertem video marketingu dla sklepu e-commerce {client_name} ({domain}).
 
 Dla każdej frazy, gdzie w SERP pojawia się feature "video", oceń:
-1. Czy lepiej opublikować video na kanale YouTube klienta ({client_name}) czy zlecić zewnętrznemu influencerowi/content creatorowi?
-2. Jaki format video rekomendujesz?
+1. Czy lepiej opublikować video na kanale YouTube klienta ({client_name}) czy zlecić influencerowi?
+2. Jaki KONKRETNY format video rekomendujesz?
 
-Zasady:
-- Jeśli fraza dotyczy unboxingu, recenzji, opinii osobistej → INFLUENCER (autentyczność)
-- Jeśli fraza dotyczy how-to, poradnika, instrukcji obsługi → KANAŁ KLIENTA (ekspertyza)
-- Jeśli fraza dotyczy porównania modeli → INFLUENCER (niezależność) lub KANAŁ KLIENTA (jeśli mają oba produkty)
-- Jeśli fraza dotyczy premiery → KANAŁ KLIENTA (pierwsze info) + INFLUENCER (hype)
+Dostajesz kontekst: keyword, L2_Intent, L3_MM_Segment.
+
+ZASADY KANAŁU:
+- KANAŁ KLIENTA: how-to, poradniki, instrukcje obsługi, porównania techniczne, premiery (pierwsze info o produkcie)
+- INFLUENCER: unboxing, recenzje, opinie osobiste, testy w realnych warunkach, "czy warto kupić?"
+- OBA: duże premiery (klient = info oficjalne, influencer = hype), porównania flagowców
+
+ZASADY FORMATU — bądź KONKRETNY, nie powtarzaj tego samego formatu:
+- Unboxing + pierwsze wrażenia — nowe modele, świeżo po premierze
+- Test aparatu / zdjęcia / video — modele znane z fotografii (iPhone Pro, Pixel, Galaxy S Ultra)
+- Test wydajności / gaming — modele gamingowe (POCO, OnePlus, ROG)
+- Porównanie X vs Y — frazy versus, użytkownik decyduje między modelami
+- Recenzja po 3 miesiącach — starsze modele, long-term review
+- How-to / poradnik — frazy instrukcyjne
+- Premiera / zapowiedź — modele jeszcze NIEPREMIEROWANE (np. iPhone 18, Galaxy S26)
+- Top / ranking — zestawienia (np. "najlepsze smartfony 2025")
+
+WAŻNE O PREMIERACH:
+- Model jest "premierowy" TYLKO jeśli jeszcze nie jest w powszechnej sprzedaży lub dopiero co wszedł na rynek
+- Modele starsze niż ~6 miesięcy to NIE premiery — to recenzje, testy, porównania
+- iPhone 15, 14, 13 = stare modele → recenzja / porównanie / test długoterminowy
+- iPhone 17 = nowy model → unboxing + premiera
+- POCO X7 Pro, Samsung Galaxy S25 = sprawdź kontekst, mogą być świeże lub nie
 
 Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "video_channel": "KANAŁ KLIENTA" lub "INFLUENCER" lub "OBA", "video_format": "np. Unboxing, How-to, Porównanie, Test, Recenzja, Premiera", "video_note": "krótkie uzasadnienie"}}
+{{"keyword": "fraza", "video_channel": "KANAŁ KLIENTA" lub "INFLUENCER" lub "OBA", "video_format": "konkretny format z listy powyżej", "video_note": "krótkie uzasadnienie z odniesieniem do specyfiki tego modelu"}}
 
 Dane:
 {keywords_json}""",
@@ -121,36 +181,45 @@ STRUKTURA URL KLIENTA:
 - Kategorie: {domain}{category_path}
 - Content: {domain}{content_path}
 
-DANE O FRAZIE zawierają:
-- Pozycje i URL-e klienta z SERP (Pos_SEO_Explorer, URL_best_Explorer)
-- Czy klient ma produkty (Has_products, Product_URLs)
-- Jakie strony klient już ma (Site_TOP_URLs, URL_types_found)
-- Czy istniejące strony pasują do intencji (Content_match_intent, Products_match_intent)
-- SERP features (czy są video, PAA, popular_products itd.)
-- Segment frazy (L3_MM_Segment)
+KLUCZOWE ZASADY — czytaj UWAŻNIE:
 
-ZASADY REKOMENDACJI:
-1. Jeśli klient MA relewantną stronę kategorii → NIE proponuj nowej, podaj istniejący URL + rekomenduj optymalizację
-2. Jeśli klient ma produkty ale NIE MA strony kategorii → proponuj nową podkategorię z URL bazowanym na istniejących URL-ach klienta z SERP
-3. Jeśli fraza wymaga filtra → proponuj URL istniejącej kategorii klienta + parametr filtra (np. ?storage=256gb, ?color=black)
-4. Jeśli fraza informacyjna bez pokrycia → nowy wpis blogowy: {domain}{content_path}...
-5. Jeśli kanibalizacja → redirect słabszego URL na silniejszy
+ZASADA #1 — BRAK POZYCJI TO NIE JEST "OK":
+Jeśli MM_in_SERP = "NIE" (klient nie rankuje w TOP10) — to ZAWSZE wymaga akcji, nawet jeśli ma strony.
+- Ma stronę kategorii ale nie rankuje → "Optymalizacja istniejącej" (meta tagi, schema, linkowanie, content)
+- Ma tylko PDP bez kategorii → "Nowa podkategoria"
+- Nie ma żadnej strony → "Nowa podkategoria" lub "Nowy wpis blogowy" zależnie od intencji
+"Brak akcji" jest dozwolone TYLKO jeśli klient jest już w TOP3.
 
-Proponowany Target_URL_suggested MUSI być w strukturze {domain} i MUSI bazować na realnych URL-ach klienta widocznych w danych (jeśli dostępne).
+ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI:
+- Fraza modelowa (np. "iphone 16 pro") wymaga strony /category/, NIE /product/. PDP to jeden wariant, user chce widzieć wszystkie.
+- Jeśli URL_types_found = "product" (bez category) dla frazy modelowej → Action = "Nowa podkategoria"
+- Jeśli URL_types_found zawiera "category" → sprawdź, czy to właściwa kategoria (patrz zasada #3)
+
+ZASADA #3 — WALIDACJA TARGET URL:
+Target_URL_suggested MUSI zawierać PEŁNĄ nazwę modelu z frazy.
+- Fraza "iphone 14 pro max" → URL MUSI zawierać "iphone-14-pro-max", NIE "iphone-14-pro" (to inny model!)
+- Fraza "poco x7 pro" → URL MUSI zawierać "poco-x7-pro"
+- Jeśli w danych nie ma pasującego URL-a — zaproponuj NOWY URL w konwencji klienta
+
+ZASADA #4 — REKOMENDACJE MUSZĄ BYĆ KONKRETNE:
+NIE pisz "Klient ma istniejące strony pasujące do intencji". Zamiast tego napisz CO DOKŁADNIE zrobić:
+- "Reoptymalizacja meta title i description na /category/apple-iphone-16-pro-70150.html — dodaj priceRange schema, FAQ z PAA"
+- "Utwórz nową podkategorię /category/apple-iphone-15/ — brak strony kategorii mimo 9 PDP w ofercie"
+- "Redirect /product/X na /category/Y — kanibalizacja, PDP zabiera ruch kategorii"
 
 Możliwe Action_type:
-- Nowa podkategoria
-- Nowy filtr
-- Nowy wpis blogowy
-- Optymalizacja istniejącej
-- Nowy landing (premiera, versus, ranking)
-- Redirect
-- Video content (jeśli video dominuje SERP)
-- Artykuł sponsorowany / offsite
-- Brak akcji
+- Nowa podkategoria — brak strony kategorii, ale są produkty
+- Nowy filtr — potrzebny filtr na istniejącej kategorii
+- Nowy wpis blogowy — fraza informacyjna bez pokrycia
+- Optymalizacja istniejącej — jest strona ale nie rankuje lub rankuje słabo
+- Nowy landing — premiera, versus, ranking
+- Redirect — kanibalizacja
+- Video content — video dominuje SERP
+- Artykuł sponsorowany / offsite — frazy gdzie retailerzy nie wygrywają
+- Brak akcji — TYLKO jeśli klient jest w TOP3 i strona pasuje do intencji
 
 Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "Action_type": "...", "Action_detail": "szczegółowy opis", "Target_URL_suggested": "URL w strukturze {domain}"}}
+{{"keyword": "fraza", "Action_type": "...", "Action_detail": "KONKRETNY opis akcji z odniesieniem do URL-i klienta", "Target_URL_suggested": "URL zawierający PEŁNĄ nazwę modelu z frazy"}}
 
 Dane:
 {keywords_json}""",
@@ -197,7 +266,7 @@ def export_segmented_xlsx(df):
             actions = df[df[action_col].fillna("") != ""][action_col].unique()
             for act in sorted(actions):
                 act_df = df[df[action_col] == act]
-                safe_name = f"A_{re.sub(r'[^w ]+', '', act)[:28]}"
+                safe_name = f"A_{re.sub(r'[^\\w ]+', '', act)[:28]}"
                 safe_name = re.sub(r'[^\w\s-]', '', safe_name)[:31]
                 if safe_name not in [ws for ws in writer.sheets]:
                     act_df.to_excel(writer, sheet_name=safe_name, index=False)
@@ -628,7 +697,9 @@ elif CS == 7:
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step8_{date.today()}.xlsx")
     if st.button("🤖 Uruchom content match", type="primary"):
-        tc = [{"keyword": row["Keyword"], "site_urls": str(row.get("Site_TOP_URLs", ""))} for _, row in hc.iterrows()]
+        tc = [{"keyword": row["Keyword"],
+               "site_urls": str(row.get("Site_TOP_URLs", "")),
+               "url_types": str(row.get("URL_types_found", ""))} for _, row in hc.iterrows()]
         if tc:
             p = st.empty()
             res = call_openai_batch(st.session_state.prompts["content_match"], tc, st.session_state.config, p)
@@ -660,7 +731,11 @@ elif CS == 8:
 
     if st.button("🤖 Uruchom video analysis", type="primary"):
         if not video_kws.empty:
-            tc = video_kws["Keyword"].tolist()
+            tc = []
+            for _, row in video_kws.iterrows():
+                tc.append({"keyword": row["Keyword"],
+                           "L2_Intent": str(row.get("L2_Intent", "")),
+                           "L3_MM_Segment": str(row.get("L3_MM_Segment", ""))})
             p = st.empty()
             res = call_openai_batch(st.session_state.prompts["video_analysis"], tc, st.session_state.config, p)
             rm = {r["keyword"]: r for r in res if "keyword" in r}
