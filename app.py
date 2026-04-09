@@ -7,6 +7,7 @@ import io
 import asyncio
 import tiktoken
 from pydantic import BaseModel, ConfigDict
+from typing import Optional
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 from openai import AsyncOpenAI
 from datetime import date
@@ -41,7 +42,7 @@ client = get_openai_client()
 class RelevantItem(BaseModel):
     keyword: str
     relevant: str
-    reason: str
+    reason: Optional[str] = None
 
 class RelevantResponse(BaseModel):
     items: list[RelevantItem]
@@ -118,6 +119,7 @@ Fraza jest NIERELEWANTNA jeśli dotyczy: tapet/wallpapers, memów, napraw DIY ni
 
 Fraza JEST relewantna jeśli dotyczy: produktów elektronicznych, akcesoriów, porównań produktów, recenzji, cen, specyfikacji technicznych, serwisu, kategorii produktowych.
 
+Jeśli pole relevant to "TAK", to w wymuszonym obiekcie JSON pole reason powinno pozostać puste. Jeśli "NIE" - krótko uzasadnij dlaczego.
 Odpowiedz zgodnie z wymaganym schematem JSON. Obojętnie od instrukcji, twój output musi być zgodny z wymuszonym Structured Outputem.
 
 Frazy:
@@ -272,9 +274,22 @@ def render_step_bar(current):
 
 # ── AI API Async Flow ────────────────────────────────────────
 
+PRICING_PER_1M_INPUT = {
+    "gpt-5.4-pro": 5.00,
+    "gpt-5.4": 2.50,
+    "gpt-5.4-mini": 0.15,
+    "gpt-5.4-nano": 0.05,
+    "gpt-5-mini": 0.15,
+    "gpt-5-nano": 0.05,
+    "gpt-5": 2.50,
+    "gpt-4.1": 2.50,
+    "gpt-4o-mini": 0.15
+}
+
 def estimate_tokens(prompt_template, keywords_data, config):
     try:
-        enc = tiktoken.encoding_for_model(config["model"])
+        model_name = config["model"]
+        enc = tiktoken.encoding_for_model(model_name)
     except KeyError:
         enc = tiktoken.get_encoding("cl100k_base")
         
@@ -292,7 +307,10 @@ def estimate_tokens(prompt_template, keywords_data, config):
         }
         prompt = prompt_template.format(**fmt_kwargs)
         total_tokens += len(enc.encode(prompt))
-    return total_tokens
+        
+    price_per_1m = PRICING_PER_1M_INPUT.get(model_name, 0.15)
+    cost_usd = (total_tokens / 1_000_000) * price_per_1m
+    return total_tokens, cost_usd
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
 async def fetch_batch_async(prompt, model, schema, ai_client):
@@ -464,7 +482,7 @@ with st.sidebar:
     st.session_state.config["content_path"] = st.text_input("Ścieżka contentu", st.session_state.config["content_path"])
     st.subheader("AI")
     
-    MODELS = ["gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5-mini", "gpt-5-nano", "gpt-5", "gpt-4.1"]
+    MODELS = ["gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5-mini", "gpt-5-nano", "gpt-5", "gpt-4.1", "gpt-4o-mini"]
     current_model = st.session_state.config.get("model", "gpt-5.4-mini")
     if current_model not in MODELS:
         current_model = "gpt-5.4-mini"
@@ -524,8 +542,8 @@ elif CS == 1:
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step2_{date.today()}.xlsx")
     
     kws = df["Keyword"].tolist()
-    est_toks = estimate_tokens(st.session_state.prompts["relevant"], kws, st.session_state.config)
-    st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+    est_toks, cost_usd = estimate_tokens(st.session_state.prompts["relevant"], kws, st.session_state.config)
+    st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
     
     if st.button("🤖 Uruchom relevance check", type="primary"):
         p = st.empty()
@@ -551,8 +569,8 @@ elif CS == 2:
     
     mask = df["Relevant_for_MM"] == "TAK" if "Relevant_for_MM" in df.columns else pd.Series([True]*len(df))
     kws = df[mask]["Keyword"].tolist()
-    est_toks = estimate_tokens(st.session_state.prompts["classify"], kws, st.session_state.config)
-    st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+    est_toks, cost_usd = estimate_tokens(st.session_state.prompts["classify"], kws, st.session_state.config)
+    st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
     
     if st.button("🤖 Uruchom klasyfikację", type="primary"):
         p = st.empty()
@@ -627,8 +645,8 @@ elif CS == 5:
     
     tc = [{"keyword": row["Keyword"], "product_urls": str(row.get("Product_URLs", ""))} for _, row in hp.iterrows()]
     if tc:
-        est_toks = estimate_tokens(st.session_state.prompts["products_match"], tc, st.session_state.config)
-        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+        est_toks, cost_usd = estimate_tokens(st.session_state.prompts["products_match"], tc, st.session_state.config)
+        st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
     
     if st.button("🤖 Uruchom products match", type="primary"):
         if tc:
@@ -683,8 +701,8 @@ elif CS == 7:
            "site_urls": str(row.get("Site_TOP_URLs", "")),
            "url_types": str(row.get("URL_types_found", ""))} for _, row in hc.iterrows()]
     if tc:
-        est_toks = estimate_tokens(st.session_state.prompts["content_match"], tc, st.session_state.config)
-        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+        est_toks, cost_usd = estimate_tokens(st.session_state.prompts["content_match"], tc, st.session_state.config)
+        st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
            
     if st.button("🤖 Uruchom content match", type="primary"):
         if tc:
@@ -722,8 +740,8 @@ elif CS == 8:
             tc.append({"keyword": row["Keyword"],
                        "L2_Intent": str(row.get("L2_Intent", "")),
                        "L3_MM_Segment": str(row.get("L3_MM_Segment", ""))})
-        est_toks = estimate_tokens(st.session_state.prompts["video_analysis"], tc, st.session_state.config)
-        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+        est_toks, cost_usd = estimate_tokens(st.session_state.prompts["video_analysis"], tc, st.session_state.config)
+        st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
                        
     if st.button("🤖 Uruchom video analysis", type="primary"):
         if not video_kws.empty:
@@ -783,8 +801,8 @@ elif CS == 9:
     ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
     
     if ta:
-        est_toks = estimate_tokens(st.session_state.prompts["action"], ta, st.session_state.config)
-        st.info(f"💡 Estymacja zapytania: **~{est_toks:,} tokenów** (tylko input)")
+        est_toks, cost_usd = estimate_tokens(st.session_state.prompts["action"], ta, st.session_state.config)
+        st.info(f"💡 Estymacja dla całości: **~{est_toks:,} tokenów** · Koszt inputu: **~${cost_usd:.4f}**")
     
     if st.button("🤖 Uruchom rekomendacje", type="primary"):
         if ta:
