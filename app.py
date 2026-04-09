@@ -146,30 +146,36 @@ Dla każdej frazy, gdzie w SERP pojawia się feature "video", oceń:
 
 Dostajesz kontekst: keyword, L2_Intent, L3_MM_Segment.
 
+STATUS MODELI NA RYNKU (stan: kwiecień 2026):
+- iPhone 11, 12, 13, 14, 15 — STARE modele (1-5 lat na rynku)
+- iPhone 16, 16 Pro, 16 Pro Max, 16e — wydane jesień 2024/wiosna 2025, NA RYNKU od ponad roku
+- iPhone 17, 17 Pro, 17 Pro Max — NOWE, premiera jesień 2025, świeże na rynku
+- iPhone 18 — NIEZAPOWIEDZIANY, premiera najwcześniej jesień 2026
+- Samsung Galaxy S25 series — NA RYNKU od stycznia 2025
+- Samsung Galaxy S26 — NIEZAPOWIEDZIANY
+- POCO X7 Pro — NA RYNKU od początku 2025
+- Realme, OnePlus, Nothing — sprawdź kontekst, większość modeli z 2024-2025 jest już na rynku
+
 ZASADY KANAŁU:
-- KANAŁ KLIENTA: how-to, poradniki, instrukcje obsługi, porównania techniczne, premiery (pierwsze info o produkcie)
+- KANAŁ KLIENTA: how-to, poradniki, porównania techniczne z produktami ze sklepu, oficjalne premiery
 - INFLUENCER: unboxing, recenzje, opinie osobiste, testy w realnych warunkach, "czy warto kupić?"
-- OBA: duże premiery (klient = info oficjalne, influencer = hype), porównania flagowców
+- OBA: duże premiery flagowców (klient = info oficjalne, influencer = hype)
 
-ZASADY FORMATU — bądź KONKRETNY, nie powtarzaj tego samego formatu:
-- Unboxing + pierwsze wrażenia — nowe modele, świeżo po premierze
-- Test aparatu / zdjęcia / video — modele znane z fotografii (iPhone Pro, Pixel, Galaxy S Ultra)
+ZASADY FORMATU — dopasuj do STATUSU modelu na rynku:
+- Premiera / zapowiedź — TYLKO modele niezapowiedziane lub dopiero co wydane (max 3 miesiące)
+- Unboxing + pierwsze wrażenia — modele wydane w ostatnich 6 miesiącach
+- Test aparatu / zdjęcia — flagowce znane z fotografii (iPhone Pro, Pixel, Galaxy S Ultra)
 - Test wydajności / gaming — modele gamingowe (POCO, OnePlus, ROG)
-- Porównanie X vs Y — frazy versus, użytkownik decyduje między modelami
-- Recenzja po 3 miesiącach — starsze modele, long-term review
+- Porównanie X vs Y — gdy fraza sugeruje porównanie lub user wybiera między modelami
+- Recenzja po dłuższym użytkowaniu — modele 6-18 miesięcy na rynku
+- Evergreen review — modele 2+ lata na rynku, nadal popularne
 - How-to / poradnik — frazy instrukcyjne
-- Premiera / zapowiedź — modele jeszcze NIEPREMIEROWANE (np. iPhone 18, Galaxy S26)
-- Top / ranking — zestawienia (np. "najlepsze smartfony 2025")
+- Top / ranking — zestawienia
 
-WAŻNE O PREMIERACH:
-- Model jest "premierowy" TYLKO jeśli jeszcze nie jest w powszechnej sprzedaży lub dopiero co wszedł na rynek
-- Modele starsze niż ~6 miesięcy to NIE premiery — to recenzje, testy, porównania
-- iPhone 15, 14, 13 = stare modele → recenzja / porównanie / test długoterminowy
-- iPhone 17 = nowy model → unboxing + premiera
-- POCO X7 Pro, Samsung Galaxy S25 = sprawdź kontekst, mogą być świeże lub nie
+WAŻNE: Każda fraza powinna dostać INNY, dopasowany format. NIE dawaj tego samego formatu wszystkim.
 
 Odpowiedz WYŁĄCZNIE jako JSON array:
-{{"keyword": "fraza", "video_channel": "KANAŁ KLIENTA" lub "INFLUENCER" lub "OBA", "video_format": "konkretny format z listy powyżej", "video_note": "krótkie uzasadnienie z odniesieniem do specyfiki tego modelu"}}
+{{"keyword": "fraza", "video_channel": "KANAŁ KLIENTA" lub "INFLUENCER" lub "OBA", "video_format": "konkretny format", "video_note": "uzasadnienie z odniesieniem do specyfiki TEGO modelu i jego statusu na rynku"}}
 
 Dane:
 {keywords_json}""",
@@ -192,8 +198,9 @@ Jeśli MM_in_SERP = "NIE" (klient nie rankuje w TOP10) — to ZAWSZE wymaga akcj
 
 ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI:
 - Fraza modelowa (np. "iphone 16 pro") wymaga strony /category/, NIE /product/. PDP to jeden wariant, user chce widzieć wszystkie.
-- Jeśli URL_types_found = "product" (bez category) dla frazy modelowej → Action = "Nowa podkategoria"
-- Jeśli URL_types_found zawiera "category" → sprawdź, czy to właściwa kategoria (patrz zasada #3)
+- SPRAWDŹ POLE Matching_category_URL — jeśli jest NIEPUSTE, to klient JUŻ MA pasującą kategorię! Wtedy Action = "Optymalizacja istniejącej", NIE "Nowa podkategoria", a Target_URL = ten istniejący URL.
+- Jeśli Matching_category_URL jest puste ORAZ URL_types_found nie zawiera "category" → dopiero wtedy Action = "Nowa podkategoria"
+- Jeśli Matching_category_URL jest puste ALE URL_types_found zawiera "category" → sprawdź Site_TOP_URLs, może kategoria istnieje ale nie pasuje idealnie (np. iphone-14-pro zamiast iphone-14-pro-max)
 
 ZASADA #3 — WALIDACJA TARGET URL:
 Target_URL_suggested MUSI zawierać PEŁNĄ nazwę modelu z frazy.
@@ -763,12 +770,32 @@ elif CS == 9:
     st.dataframe(df.head(30), use_container_width=True)
     st.download_button("📥 XLSX", export_xlsx(df), f"seo_step10_{date.today()}.xlsx")
     if st.button("🤖 Uruchom rekomendacje", type="primary"):
+        # Pre-process: extract matching category URL for each keyword
+        cat_path = st.session_state.config["category_path"]
+        for idx, row in rel.iterrows():
+            kw = normalize_kw(row["Keyword"])
+            kw_parts = kw.split()
+            site_urls = str(row.get("Site_TOP_URLs", ""))
+            best_cat = ""
+            best_score = 0
+            for u in site_urls.split(" | "):
+                u = u.strip()
+                if cat_path in u:
+                    u_lower = u.lower()
+                    score = sum(1 for part in kw_parts if part in u_lower)
+                    if score > best_score:
+                        best_score = score
+                        best_cat = u
+            df.loc[df["Keyword"] == row["Keyword"], "Matching_category_URL"] = best_cat if best_cat else ""
+
+        rel = df[mask]  # refresh after adding column
+
         ai_cols = ["Keyword", "Volume", "L1_Funnel_stage", "L2_Intent", "L3_MM_Segment",
                    "Brand_flag", "Brand", "Pos_SEO_Explorer", "URL_best_Explorer",
                    "Cannibalization_flag", "SERP_features", "MM_in_SERP",
                    "Has_products", "Products_match_intent", "Product_URLs",
                    "Site_results_count", "Site_TOP_URLs", "URL_types_found", "Content_match_intent",
-                   "Video_channel", "Video_format"]
+                   "Matching_category_URL", "Video_channel", "Video_format"]
         avail = [c for c in ai_cols if c in rel.columns]
         ta = [{c: (str(row[c]) if pd.notna(row[c]) else "") for c in avail} for _, row in rel.iterrows()]
         if ta:
