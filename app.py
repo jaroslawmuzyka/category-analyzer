@@ -159,11 +159,11 @@ ZASADA #1 — BRAK POZYCJI TO NIE JEST "OK":
 Jeśli MM_in_SERP = "NIE", to ZAWSZE wymaga akcji.
 ZASADA #2 — TYP STRONY MUSI PASOWAĆ DO INTENCJI
 ZASADA #3 — WALIDACJA TARGET URL:
-Jeśli pole "Sitemap_TOP10" lub "Matching_category_URL" zawiera adres idealnie trafiający w intencję, jako Action_type wpisz "Mapowanie", a jako Action_detail wpisz: "Znaleziono docelowy adres w Sitemap, rekomendujemy mapowanie.". Wtedy Target_URL_suggested to ten znaleziony adres.
-Jeśli w "Sitemap_TOP10", "Matching_category_URL" i "Site_TOP_URLs" NIE MA nic sensownego, jako Action_type wpisz "Nowy URL", a jako Action_detail wpisz: "Brak docelowego adresu URL, rekomendujemy utworzenie podstrony." - dopiero wtedy zasugeruj zupełnie nowy wymyślony Target_URL.
-Wykorzystaj "Sitemap_TOP10" jako niepodważalne dowody na to, że URL już w sklepie istnieje!
+Dostajesz zmienne takie jak "Sitemap_TOP10" lub "Matching_category_URL". Zanim użyjesz jakiegokolwiek adresu stamtąd jako docelowego, MUSISZ zweryfikować czy pasuje on na 100% do frazy (zwróć m.in. uwagę na to czy fraza to "Pro Max" a URL to zwykłe "Pro" i na odwrót, modele muszą się bezwzględnie zgadzać).
+Jeśli adres w 100% pasuje: jako Action_type wpisz "Mapowanie", a jako Action_detail wpisz: "Znaleziono docelowy adres w Sitemap, rekomendujemy mapowanie.". Wtedy Target_URL_suggested to ten znaleziony adres.
+Jeśli adresy w Sitemap_TOP10 nie pasują do frazy precyzyjnie (lub są puste), ODRZUĆ JE. W takiej sytuacji wpisz Action_type: "Nowy URL", a jako Action_detail: "Brak logicznego docelowego adresu URL w zasobach analizy, rekomendujemy utworzenie podstrony." - dopiero wtedy zasugeruj Zupełnie nowy (zmyślony wizualnie, ale adekwatny) adres jako Target_URL.
 ZASADA #4 — EKSTREMALNIE KRÓTKI OPIS. Action_detail ma być bezlitosnym konkretem (max 1 krótkie zdanie, opisujące tylko luki lub sukcesy strukturalne). Błagam, nie pisz o zmianie "meta title" ani optymalizacji treści.
-ZASADA #5 — LOGICZNA SPÓJNOŚĆ: Nie możesz pisać "Brak adresu w sitemap", jeśli kopiujesz ten adres do sugerowanych pole position prosto ze ścieżki "Sitemap_TOP10". Zawsze czytaj co znajduje się w Sitemap_TOP10 przed wydaniem wyroku.
+ZASADA #5 — LOGICZNA SPÓJNOŚĆ: Zawsze czytaj co ostatecznie wybierasz jako Target_URL. Nie polecaj Nowego Adresu jeśli istnieje on literalnie w kolumnie Sitemap i przechodzi Twój gęsty test walidacji.
 
 Zwróć Action_type, Action_detail, Target_URL_suggested.
 
@@ -210,15 +210,6 @@ def export_segmented_xlsx(df):
                 seg_df = df[df[seg_col] == seg]
                 safe_name = re.sub(r'[^\w\s-]', '', seg)[:31]
                 seg_df.to_excel(writer, sheet_name=safe_name, index=False)
-        action_col = "Action_type"
-        if action_col in df.columns:
-            actions = df[df[action_col].fillna("") != ""][action_col].unique()
-            for act in sorted(actions):
-                act_df = df[df[action_col] == act]
-                safe_name = f"A_{re.sub(r'[^\\w ]+', '', act)[:28]}"
-                safe_name = re.sub(r'[^\w\s-]', '', safe_name)[:31]
-                if safe_name not in [ws for ws in writer.sheets]:
-                    act_df.to_excel(writer, sheet_name=safe_name, index=False)
     buf.seek(0)
     return buf
 
@@ -660,7 +651,8 @@ elif CS == 3:
                 st.write(f"- {k}: **{len(v)}** adresów")
             
         if st.button("🤖 Mapuj adresy z Sitemapy (Lokalnie, 0$)", type="primary"):
-            from rapidfuzz import process
+            from rapidfuzz import process, fuzz
+            import re
             
             segment_to_sm = {
                 "Kategoria producenta": "Kategorie",
@@ -675,14 +667,30 @@ elif CS == 3:
                 "PDP": "Produkty PDP"
             }
             
+            def extract_slug(url):
+                # Ekstrakcja kluczowego słowa z URL (np. apple-iphone-14-pro zamiast całego linku)
+                match = re.search(r'/([^/]+?)(?:-\d{4,})?(?:\.html)?/?$', url)
+                if match:
+                    return match.group(1).replace("-", " ")
+                return url.replace("-", " ")
+            
             def get_top_urls(kw, segment):
                 sm_key = segment_to_sm.get(segment)
                 if not sm_key or sm_key not in sitemaps or not sitemaps[sm_key]:
                     return ""
                 urls = sitemaps[sm_key]
-                kw_norm = str(kw).replace(" ", "-").lower()
-                results = process.extract(kw_norm, urls, limit=10)
-                return " | ".join(r[0] for r in results)
+                kw_norm = str(kw).replace("-", " ").lower()
+                
+                url_dict = {extract_slug(u): u for u in urls}
+                slugs = list(url_dict.keys())
+                
+                # Zastosowanie token_sort_ratio co eliminuje błąd częściowego matchowania m.in "iphone 14 pro" do URL "iphone 14 pro max"
+                results = process.extract(kw_norm, slugs, limit=3, scorer=fuzz.token_sort_ratio)
+                
+                if results and results[0][1] > 80:
+                    valid_matches = [url_dict[r[0]] for r in results if r[1] > 80]
+                    return " | ".join(valid_matches)
+                return ""
                 
             df["Sitemap_TOP10"] = df.apply(lambda row: get_top_urls(row["Keyword"], str(row.get("L3_MM_Segment", ""))), axis=1)
             st.session_state.df = df
