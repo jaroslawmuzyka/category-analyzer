@@ -286,6 +286,18 @@ PRICING_PER_1M_INPUT = {
     "gpt-4o-mini": 0.15
 }
 
+PRICING_PER_1M_OUTPUT = {
+    "gpt-5.4-pro": 15.00,
+    "gpt-5.4": 10.00,
+    "gpt-5.4-mini": 0.60,
+    "gpt-5.4-nano": 0.20,
+    "gpt-5-mini": 0.60,
+    "gpt-5-nano": 0.20,
+    "gpt-5": 10.00,
+    "gpt-4.1": 10.00,
+    "gpt-4o-mini": 0.60
+}
+
 def estimate_tokens(prompt_template, keywords_data, config):
     try:
         model_name = config["model"]
@@ -321,7 +333,7 @@ async def fetch_batch_async(prompt, model, schema, ai_client):
         max_completion_tokens=16000,
         response_format=schema
     )
-    return resp.choices[0].message.parsed
+    return resp.choices[0].message.parsed, resp.usage
 
 async def run_all_batches(prompt_template, keywords_data, config, placeholder, prompt_key):
     batch_size = config["batch_size"]
@@ -345,10 +357,15 @@ async def run_all_batches(prompt_template, keywords_data, config, placeholder, p
     results = []
     total = len(tasks)
     completed = 0
+    actual_prompt_tokens = 0
+    actual_completion_tokens = 0
     
     for coro in asyncio.as_completed(tasks):
         try:
-            parsed = await coro
+            parsed, usage = await coro
+            if usage:
+                actual_prompt_tokens += usage.prompt_tokens
+                actual_completion_tokens += usage.completion_tokens
             for item in parsed.items:
                 results.append(item.model_dump())
         except Exception as e:
@@ -359,7 +376,11 @@ async def run_all_batches(prompt_template, keywords_data, config, placeholder, p
             placeholder.progress(completed / total, text=f"Postęp: {completed}/{total} paczek...")
             
     if placeholder:
-        placeholder.progress(1.0, text="Gotowe!")
+        model_name = config["model"]
+        cost_in = (actual_prompt_tokens / 1_000_000) * PRICING_PER_1M_INPUT.get(model_name, 0.15)
+        cost_out = (actual_completion_tokens / 1_000_000) * PRICING_PER_1M_OUTPUT.get(model_name, 0.60)
+        total_cost = cost_in + cost_out
+        placeholder.progress(1.0, text=f"Gotowe! Ostateczny koszt (In+Out): ~${total_cost:.4f} ({actual_completion_tokens:,} tokenów outputu)")
     return results
 
 def call_openai_batch(prompt_template, keywords_data, config, placeholder=None, prompt_key=""):
