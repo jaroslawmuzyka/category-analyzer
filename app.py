@@ -102,7 +102,7 @@ PROMPTS = {
 Otrzymujesz listę fraz kluczowych w formacie JSON. Dla KAŻDEJ frazy oceń, czy jest relewantna dla tego sklepu.
 
 Fraza jest NIERELEWANTNA jeśli:
-- Jest w języku obcym (np. angielskim) - pozycjonujemy się tylko na rynek polski!
+- Jest w języku obcym (np. angielskim) - pozycjonujemy się tylko na rynek polski! UWAGA MAŁY WYJĄTEK: słowa takie jak "case", "smartwatch", "powerbank" to powszechne anglicyzmy w polskim IT - nie traktuj ich jako języka obcego. Odrzucaj tylko całe frazy o ewidentnie zagranicznym intentcie (np. "where to buy", "best laptops in UK").
 - Zawiera nazwy obcych sklepów konkurencji (np. allegro, media expert, rtv euro agd, x-kom, neonet, amazon, komputronik).
 - Dotyczy: tapet/wallpapers, memów, gier hazardowych/mobilnych, tylko oprogramowania, treści rozrywkowych, torrentów, piractwa itp.
 
