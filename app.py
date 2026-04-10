@@ -101,10 +101,15 @@ PROMPTS = {
     "relevant": """Jesteś ekspertem SEO dla sklepu e-commerce {client_name} ({domain}).
 Otrzymujesz listę fraz kluczowych w formacie JSON. Dla KAŻDEJ frazy oceń, czy jest relewantna dla tego sklepu.
 
-Fraza jest NIERELEWANTNA jeśli dotyczy: tapet/wallpapers, memów, napraw DIY niezwiązanych ze sklepem, gier mobilnych, oprogramowania, treści rozrywkowych, torrentów, piractwa itp. 
-Odrzucaj też ZAWSZE frazy zawierające nazwy obcych sklepów konkurencji (np. allegro, media expert, rtv euro agd, x-kom, neonet, amazon, komputronik).
+Fraza jest NIERELEWANTNA jeśli:
+- Jest w języku obcym (np. angielskim) - pozycjonujemy się tylko na rynek polski!
+- Zawiera nazwy obcych sklepów konkurencji (np. allegro, media expert, rtv euro agd, x-kom, neonet, amazon, komputronik).
+- Dotyczy: tapet/wallpapers, memów, gier hazardowych/mobilnych, tylko oprogramowania, treści rozrywkowych, torrentów, piractwa itp.
 
-Fraza JEST relewantna jeśli dotyczy: produktów elektronicznych, akcesoriów, porównań produktów, recenzji, cen, specyfikacji technicznych, serwisu, kategorii produktowych.
+Fraza JEST BEZWZGLĘDNIE RELEWANTNA jeśli:
+- Dotyczy produktów elektronicznych, akcesoriów, porównań produktów, recenzji, cen czy specyfikacji technicznych.
+- Dotyczy LOKALNEGO SERWISU I NAPRAWY (np. "wymiana baterii", "zbita szybka iphone", "serwis", "naprawa", "części"). Nie odrzucaj ich - sklep posiada własne serwisy stacjonarne!
+- Jest zapytaniem PORADNIKOWYM i edukacyjnym (np. "jak zresetować iphone", "czy oled się wypala", "gdzie znaleźć imei"). Nie odrzucaj ich - sklep prowadzi własnego bloga technologicznego!
 
 Jeśli pole relevant to "TAK", to w wymuszonym obiekcie JSON pole reason powinno pozostać puste. Jeśli "NIE" - krótko uzasadnij dlaczego.
 Odpowiedz zgodnie z wymaganym schematem JSON. Obojętnie od instrukcji, twój output musi być zgodny z wymuszonym Structured Outputem.
